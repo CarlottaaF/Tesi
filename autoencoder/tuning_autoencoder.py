@@ -223,8 +223,8 @@ def objective(trial):
     batch_size = trial.suggest_categorical('batch_size', [16, 32, 64, 128])  
     neurons_1 = trial.suggest_categorical('neurons_1', [8, 16, 32, 64, 128, 256])
     neurons_2 = trial.suggest_categorical('neurons_2', [8, 16, 32, 64, 128, 256])
-    n_layers1 = trial.suggest_int('n_layers1', 1, 3) #number of layers before concatenate
-    n_layers2 = trial.suggest_int('n_layers2', 1, 3) #number of layers after concatenate
+    n_layers1 = trial.suggest_int('n_layers1', 1, 5) #number of layers before concatenate
+    n_layers2 = trial.suggest_int('n_layers2', 1, 5) #number of layers after concatenate
     activation = trial.suggest_categorical('activation', ['tanh', 'selu', 'gelu', 'relu'])
     decay_length = trial.suggest_float('decay_length', 0.01, 1)
 
