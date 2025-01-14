@@ -215,9 +215,8 @@ from tensorflow.python.ops.numpy_ops import np_config
 np_config.enable_numpy_behavior()
     
 class MySurrogateModel_fine:
-    def __init__(self, n_channels, signal_resolution, N_entries, LF_signals_start, HF_net_to_pred):
+    def __init__(self, n_channels, N_entries, LF_signals_start, HF_net_to_pred):
         self.n_channels = n_channels
-        self.signal_resolution = signal_resolution #secondo me si può togliere
         self.N_entries = N_entries
         self.LF_signals_start = LF_signals_start
         self.HF_net_to_pred = HF_net_to_pred
@@ -279,8 +278,7 @@ class MySurrogateModel_coarse:
 
     
 class custom_loglike_fine:
-    def __init__(self, signal_resolution, n_channels, N_obs, N_entries, limit,Y_HF,LF_signals_start):
-        self.signal_resolution = signal_resolution #secondo me si può togliere
+    def __init__(self,  n_channels, N_obs, N_entries, limit,Y_HF,LF_signals_start):
         self.n_channels = n_channels
         self.N_obs = N_obs
         self.N_entries = N_entries
@@ -309,7 +307,9 @@ class custom_loglike_fine:
         #self.elapsed = time.time() - start
         
         return loglike_value
-    
+
+Y_HF_r = np.transpose(Y_HF, (0, 1, 3, 2))
+
 class custom_loglike_coarse:
     def __init__(self,Y_HF):
         self.Y_HF = Y_HF
@@ -317,15 +317,11 @@ class custom_loglike_coarse:
     def loglike(self,Input_HF):
 
         Input_HF = Input_HF.reshape(n_chains,N_entries,5+n_channels)
-        Input_HF_r = Input_HF[0,0,0:4]
-        Input_HF_r = Input_HF_r[np.newaxis,:]
-        loglike_value_coarse = 0
-        for i2 in range(N_obs):
-            Y_HF_r = Y_HF[0,i2,:,:].T
-            Y_HF_r = Y_HF_r[np.newaxis, :, :]
-            predictions = Regressor.predict([Y_HF_r,Input_HF_r])
-            predictions_true = predictions*6.3378+100.2235 
-            loglike_value_coarse = loglike_value_coarse + predictions_true
+        Input_HF_r = np.tile(Input_HF, (N_obs, 1, 1))
+        predictions = Regressor.predict([Y_HF_r[i1],Input_HF_r[:,0,0:4]])
+        predictions_true = predictions*6.3378+100.2235
+        print(predictions_true)
+        loglike_value_coarse = np.sum(predictions_true)
     
         return loglike_value_coarse
  
@@ -354,9 +350,9 @@ class CustomUniform:
 
 my_prior = CustomUniform(0, 1)
 my_loglike_coarse = custom_loglike_coarse(Y_HF)
-my_loglike_fine = custom_loglike_fine(signal_resolution, n_channels, N_obs, N_entries, limit, Y_HF, LF_signals_start)
+my_loglike_fine = custom_loglike_fine(n_channels, N_obs, N_entries, limit, Y_HF, LF_signals_start)
 my_coarse_model = MySurrogateModel_coarse(Input_HF_start)
-my_fine_model = MySurrogateModel_fine(n_channels, signal_resolution, N_entries, LF_signals_start, HF_net_to_pred)
+my_fine_model = MySurrogateModel_fine(n_channels, N_entries, LF_signals_start, HF_net_to_pred)
 
 # set up the link factories
 my_posterior_coarse = tda.Posterior(my_prior, my_loglike_coarse, my_coarse_model)
@@ -374,10 +370,10 @@ if "CI" in os.environ:
     iterations = 120
     burnin = 20
 else:
-    iterations = 500
-    burnin = 50
+    iterations = 2000
+    burnin = 200
     
-my_chains = tda.sample(my_posteriors, my_proposal, iterations=iterations, n_chains=2, force_sequential=True)
+my_chains = tda.sample(my_posteriors, my_proposal, iterations=iterations, n_chains=2, force_sequential=True, subsampling_rate=1)
 
 #%%
 import arviz as az
