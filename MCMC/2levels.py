@@ -320,7 +320,6 @@ class custom_loglike_coarse:
         Input_HF_r = np.tile(Input_HF, (N_obs, 1, 1))
         predictions = Regressor.predict([Y_HF_r[i1],Input_HF_r[:,0,0:4]])
         predictions_true = predictions*6.3378+100.2235
-        print(predictions_true)
         loglike_value_coarse = np.sum(predictions_true)
     
         return loglike_value_coarse
