@@ -211,6 +211,26 @@ for i3 in range(n_channels):
     Input_HF_start[:, :, 5 + i3] = LF_signals_start[:, :, i3]
 
 #%%
+#cosa di prova
+
+Input_HF_true = Input_HF_start
+Input_HF_true[:,2] = X_HF[10,0]
+like_single_obs_true = np.zeros((n_chains,N_obs)) #contenitore per likelihood sulla singola osservazione
+
+Y_true = HF_net_to_pred.predict(Input_HF_true, verbose=0)
+
+for i2 in range(N_obs):
+   like_single_obs_true[:,i2] = single_param_like_single_obs(Y_HF[i1,i2,:,limit:],np.transpose(Y_true[:,limit:,:], axes=[0,2,1]))
+
+log_like_single_true = np.log(like_single_obs_true)
+log_true = np.sum(log_like_single_true)
+lik_min = np.min(log_like_single_true)
+delta_max = np.max(log_like_single_true)-lik_min
+
+
+
+
+#%%
 from tensorflow.python.ops.numpy_ops import np_config
 np_config.enable_numpy_behavior()
     
@@ -319,7 +339,14 @@ class custom_loglike_coarse:
         Input_HF = Input_HF.reshape(n_chains,N_entries,5+n_channels)
         Input_HF_r = np.tile(Input_HF, (N_obs, 1, 1))
         predictions = Regressor.predict([Y_HF_r[i1],Input_HF_r[:,0,0:4]])
+<<<<<<< HEAD
+        predictions_true = predictions*delta_max+lik_min
+=======
         predictions_true = predictions*6.3378+100.2235
+<<<<<<< Updated upstream
+=======
+>>>>>>> 12796edd3760db01d2de8b78c59c43d15416fb54
+>>>>>>> Stashed changes
         loglike_value_coarse = np.sum(predictions_true)
     
         return loglike_value_coarse
@@ -383,4 +410,20 @@ params = idata.posterior["x0"].values
 az.summary(idata)
 
 az.plot_trace(idata)
+plt.show()
+
+#%%
+
+log1 = np.empty(1801)
+for i in range(len(params[0, :])):
+    log1[i] = my_loglike_fine.loglike(my_fine_model.__call__(params[0,i]))
+lik1 = np.exp(log1)
+
+# Grafico
+plt.figure(figsize=(8, 5))
+plt.plot(params[0,:], lik1, marker='o', linestyle='', label="Likelihood")
+plt.xlabel("Parametro del modello")
+plt.ylabel("Likelihood")
+plt.title("Andamento della Likelihood(catena1) al variare del parametro")
+plt.legend()
 plt.show()
