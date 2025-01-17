@@ -219,8 +219,16 @@ like_single_obs_true = np.zeros((n_chains,N_obs)) #contenitore per likelihood su
 
 Y_true = HF_net_to_pred.predict(Input_HF_true, verbose=0)
 
+def single_param_like_single_obs1(obs,mapping): #likelihood assumes independent prediction errors 
+    for j1 in range(n_chains):
+        for i1 in range(n_channels):
+            rmse = RMSE(obs[i1], mapping[j1,i1])
+            rsse = RSSE(obs[i1], mapping[j1,i1])
+            like_single_dof[j1,i1] = 1./(np.sqrt(2.*np.pi)*rmse) * np.exp(-((rsse**2)/(2.*(rmse**2)))) #evitare underflow aritmetico
+    return np.prod(like_single_dof,axis=1)
+
 for i2 in range(N_obs):
-   like_single_obs_true[:,i2] = single_param_like_single_obs(Y_HF[i1,i2,:,limit:],np.transpose(Y_true[:,limit:,:], axes=[0,2,1]))
+   like_single_obs_true[:,i2] = single_param_like_single_obs1(Y_HF[i1,i2,:,limit:],np.transpose(Y_true[:,limit:,:], axes=[0,2,1]))
 
 log_like_single_true = np.log(like_single_obs_true)
 log_true = np.sum(log_like_single_true)
@@ -392,7 +400,7 @@ else:
     iterations = 2000
     burnin = 200
     
-my_chains = tda.sample(my_posteriors, my_proposal, iterations=iterations, n_chains=2, force_sequential=True, subsampling_rate=1)
+my_chains = tda.sample(my_posteriors, my_proposal, iterations=iterations, n_chains=2, force_sequential=True)
 
 #%%
 import arviz as az
