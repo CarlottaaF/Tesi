@@ -209,12 +209,15 @@ for i3 in range(n_channels): #normale standard su ogni canale
 
 for i3 in range(n_channels):
     Input_HF_start[:, :, 5 + i3] = LF_signals_start[:, :, i3]
+    
+#Input_HF_start_r = np.tile(Input_HF_start, (N_obs, 1, 1))
 
 #%%
 #cosa di prova
 
-Input_HF_true = Input_HF_start
-Input_HF_true[:,2] = X_HF[10,0]
+Input_HF_true = Input_HF_start.copy()
+Input_HF_true[:, :, 2] = X_HF[i1 * N_obs, 0]
+
 like_single_obs_true = np.zeros((n_chains,N_obs)) #contenitore per likelihood sulla singola osservazione
 
 Y_true = HF_net_to_pred.predict(Input_HF_true, verbose=0)
@@ -336,11 +339,11 @@ class custom_loglike_fine:
         
         return loglike_value
 
-Y_HF_r = np.transpose(Y_HF, (0, 1, 3, 2))
+Y_HF_r = np.transpose(Y_HF, (0, 1, 3, 2)) #(10,8,200,8)
 
 class custom_loglike_coarse:
-    def __init__(self,Y_HF):
-        self.Y_HF = Y_HF
+    def __init__(self,Y_HF_r):
+        self.Y_HF_r = Y_HF_r
     
     def loglike(self,Input_HF):
 
@@ -376,7 +379,7 @@ class CustomUniform:
     
 
 my_prior = CustomUniform(0, 1)
-my_loglike_coarse = custom_loglike_coarse(Y_HF)
+my_loglike_coarse = custom_loglike_coarse(Y_HF_r)
 my_loglike_fine = custom_loglike_fine(n_channels, N_obs, N_entries, limit, Y_HF, LF_signals_start)
 my_coarse_model = MySurrogateModel_coarse(Input_HF_start)
 my_fine_model = MySurrogateModel_fine(n_channels, N_entries, LF_signals_start, HF_net_to_pred)
@@ -397,10 +400,10 @@ if "CI" in os.environ:
     iterations = 120
     burnin = 20
 else:
-    iterations = 2000
-    burnin = 200
+    iterations = 4000
+    burnin = 400
     
-my_chains = tda.sample(my_posteriors, my_proposal, iterations=iterations, n_chains=2, force_sequential=True)
+my_chains = tda.sample(my_posteriors, my_proposal, iterations=iterations, n_chains=2, store_coarse_chain=False,force_sequential=True)
 
 #%%
 import arviz as az
