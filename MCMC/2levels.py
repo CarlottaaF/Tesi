@@ -349,7 +349,7 @@ class custom_loglike_coarse:
 
         Input_HF = Input_HF.reshape(n_chains,N_entries,5+n_channels)
         Input_HF_r = np.tile(Input_HF, (N_obs, 1, 1))
-        predictions = Regressor.predict([Y_HF_r[i1],Input_HF_r[:,0,0:4]])
+        predictions = Regressor.predict([Y_HF_r[i1],Input_HF_r[:,0,0:4]],verbose=0)
         predictions_true = predictions*delta_max+lik_min
         loglike_value_coarse = np.sum(predictions_true)
     
