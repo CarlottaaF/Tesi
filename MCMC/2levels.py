@@ -177,6 +177,9 @@ Input_HF_start[:,:,4] = np.linspace(signal_resolution, signal_resolution * N_ent
 X_input_MF[:,0] = X_true[i1, 0] #forzare Frequency_true corrispondente a which_ist
 X_input_MF[:,1] = X_true[i1, 1] #frozare Amplitude_true corrispondente a  which_ist
 
+lik_min = -662.8712407554493
+delta_max = 48.33037331313744
+
 #BEGIN MCMC
 def RMSE(vect1, vect2):
     return np.sqrt(np.mean(np.square(vect1 - vect2)))
@@ -211,34 +214,6 @@ for i3 in range(n_channels):
     Input_HF_start[:, :, 5 + i3] = LF_signals_start[:, :, i3]
     
 #Input_HF_start_r = np.tile(Input_HF_start, (N_obs, 1, 1))
-
-#%%
-#cosa di prova
-
-Input_HF_true = Input_HF_start.copy()
-Input_HF_true[:, :, 2] = X_HF[i1 * N_obs, 0]
-
-like_single_obs_true = np.zeros((n_chains,N_obs)) #contenitore per likelihood sulla singola osservazione
-
-Y_true = HF_net_to_pred.predict(Input_HF_true, verbose=0)
-
-def single_param_like_single_obs1(obs,mapping): #likelihood assumes independent prediction errors 
-    for j1 in range(n_chains):
-        for i1 in range(n_channels):
-            rmse = RMSE(obs[i1], mapping[j1,i1])
-            rsse = RSSE(obs[i1], mapping[j1,i1])
-            like_single_dof[j1,i1] = 1./(np.sqrt(2.*np.pi)*rmse) * np.exp(-((rsse**2)/(2.*(rmse**2)))) #evitare underflow aritmetico
-    return np.prod(like_single_dof,axis=1)
-
-for i2 in range(N_obs):
-   like_single_obs_true[:,i2] = single_param_like_single_obs1(Y_HF[i1,i2,:,limit:],np.transpose(Y_true[:,limit:,:], axes=[0,2,1]))
-
-log_like_single_true = np.log(like_single_obs_true)
-log_true = np.sum(log_like_single_true)
-lik_min = np.min(log_like_single_true)
-delta_max = np.max(log_like_single_true)-lik_min
-
-
 
 
 #%%
@@ -342,20 +317,42 @@ class custom_loglike_fine:
 Y_HF_r = np.transpose(Y_HF, (0, 1, 3, 2)) #(10,8,200,8)
 
 class custom_loglike_coarse:
-    def __init__(self,Y_HF_r):
+    def __init__(self,Y_HF_r,Regressor):
         self.Y_HF_r = Y_HF_r
+        self.Regressor = Regressor
+    
+    @tf.function(jit_compile=True, reduce_retracing=True)
+    def predict_optimized(self, Y_HF_r, Input_HF_r):
+        # Controlla e converte gli input in tensori
+        if not isinstance(Y_HF_r, tf.Tensor):
+            Y_HF_r = tf.convert_to_tensor(Y_HF_r, dtype=tf.float32)
+            Y_HF_r.set_shape([N_ist//N_obs,N_obs,N_entries,n_channels])
+        if not isinstance(Input_HF_r, tf.Tensor):
+            Input_HF_r = tf.convert_to_tensor(Input_HF_r, dtype=tf.float32)
+            Input_HF_r.set_shape([N_obs,N_entries,5+n_channels])
+            
+        # Disabilita la tracciatura del gradiente per migliorare l'efficienza
+        with tf.GradientTape(persistent=False, watch_accessed_variables=False) as tape:
+            tape.stop_recording()  # Disabilita il calcolo dei gradienti
+            # Previsione del segnale HF usando il modello pre-addestrato
+            predictions = self.Regressor([self.Y_HF_r[i1], Input_HF_r[:, 0, 0:4]], training=False)
+            
+        return predictions
     
     def loglike(self,Input_HF):
-
-        Input_HF = Input_HF.reshape(n_chains,N_entries,5+n_channels)
-        Input_HF_r = np.tile(Input_HF, (N_obs, 1, 1))
-        predictions = Regressor.predict([Y_HF_r[i1],Input_HF_r[:,0,0:4]],verbose=0)
+        
+        Input_HF = tf.reshape(Input_HF, [n_chains,N_entries, 5 + n_channels])
+        Input_HF_r = tf.tile(Input_HF, [N_obs, 1, 1])  # Replica Input_HF
+        predictions = self.predict_optimized(Y_HF_r,Input_HF_r)
         predictions_true = predictions*delta_max+lik_min
-        loglike_value_coarse = np.sum(predictions_true)
+        loglike_value_coarse = tf.reduce_sum(predictions_true)
+        
     
         return loglike_value_coarse
  
 
+    
+    
 class CustomUniform:
     def __init__(self, lower_bound, upper_bound):
         self.lower_bound = lower_bound
@@ -379,7 +376,7 @@ class CustomUniform:
     
 
 my_prior = CustomUniform(0, 1)
-my_loglike_coarse = custom_loglike_coarse(Y_HF_r)
+my_loglike_coarse = custom_loglike_coarse(Y_HF_r,Regressor)
 my_loglike_fine = custom_loglike_fine(n_channels, N_obs, N_entries, limit, Y_HF, LF_signals_start)
 my_coarse_model = MySurrogateModel_coarse(Input_HF_start)
 my_fine_model = MySurrogateModel_fine(n_channels, N_entries, LF_signals_start, HF_net_to_pred)
@@ -390,7 +387,7 @@ my_posterior_fine = tda.Posterior(my_prior, my_loglike_fine, my_fine_model)
 my_posteriors = [my_posterior_coarse, my_posterior_fine] 
 
 # Set up the proposal : random walk Metropolis
-rwmh_cov = 1e-2 *np.eye(1)
+rwmh_cov = 1e-2*np.eye(1)
 rwmh_adaptive = True
 my_proposal = tda.GaussianRandomWalk(C=rwmh_cov, adaptive=rwmh_adaptive)
 
@@ -400,8 +397,8 @@ if "CI" in os.environ:
     iterations = 120
     burnin = 20
 else:
-    iterations = 4000
-    burnin = 400
+    iterations = 10000
+    burnin = 1000
     
 my_chains = tda.sample(my_posteriors, my_proposal, iterations=iterations, n_chains=2, store_coarse_chain=False,force_sequential=True)
 
@@ -418,16 +415,16 @@ plt.show()
 
 #%%
 
-log1 = np.empty(1801)
-for i in range(len(params[0, :])):
-    log1[i] = my_loglike_fine.loglike(my_fine_model.__call__(params[0,i]))
-lik1 = np.exp(log1)
+# log1 = np.empty(1801)
+# for i in range(len(params[0, :])):
+#     log1[i] = my_loglike_fine.loglike(my_fine_model.__call__(params[0,i]))
+# lik1 = np.exp(log1)
 
-# Grafico
-plt.figure(figsize=(8, 5))
-plt.plot(params[0,:], lik1, marker='o', linestyle='', label="Likelihood")
-plt.xlabel("Parametro del modello")
-plt.ylabel("Likelihood")
-plt.title("Andamento della Likelihood(catena1) al variare del parametro")
-plt.legend()
-plt.show()
+# # Grafico
+# plt.figure(figsize=(8, 5))
+# plt.plot(params[0,:], lik1, marker='o', linestyle='', label="Likelihood")
+# plt.xlabel("Parametro del modello")
+# plt.ylabel("Likelihood")
+# plt.title("Andamento della Likelihood(catena1) al variare del parametro")
+# plt.legend()
+# plt.show()
