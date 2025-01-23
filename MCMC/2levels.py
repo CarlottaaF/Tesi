@@ -397,10 +397,10 @@ if "CI" in os.environ:
     iterations = 120
     burnin = 20
 else:
-    iterations = 10000
-    burnin = 1000
+    iterations = 4000
+    burnin = 400
     
-my_chains = tda.sample(my_posteriors, my_proposal, iterations=iterations, n_chains=2, store_coarse_chain=False,force_sequential=True)
+my_chains = tda.sample(my_posterior_fine, my_proposal, iterations=iterations, n_chains=2, store_coarse_chain=False,force_sequential=True)
 
 #%%
 import arviz as az
@@ -412,6 +412,10 @@ az.summary(idata)
 
 az.plot_trace(idata)
 plt.show()
+
+#Effective Sample Size
+az.ess(idata,var_names=["x0"])
+
 
 #%%
 
