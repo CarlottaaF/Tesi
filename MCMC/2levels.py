@@ -177,10 +177,9 @@ Input_HF_start[:,:,4] = np.linspace(signal_resolution, signal_resolution * N_ent
 X_input_MF[:,0] = X_true[i1, 0] #forzare Frequency_true corrispondente a which_ist
 X_input_MF[:,1] = X_true[i1, 1] #frozare Amplitude_true corrispondente a  which_ist
 
-lik_min = -662.8712407554493
-delta_max = 48.33037331313744
+lik_min = -48.639039929443115
+delta_max = 50.38970094774706
 
-#BEGIN MCMC
 def RMSE(vect1, vect2):
     return np.sqrt(np.mean(np.square(vect1 - vect2)))
 
@@ -213,10 +212,88 @@ for i3 in range(n_channels): #normale standard su ogni canale
 for i3 in range(n_channels):
     Input_HF_start[:, :, 5 + i3] = LF_signals_start[:, :, i3]
     
-#Input_HF_start_r = np.tile(Input_HF_start, (N_obs, 1, 1))
+#%%
 
+Y_HF_r = np.transpose(Y_HF, (0, 1, 3, 2)) #(10,8,200,8)
+
+#OTTIMIZZAZIONE
+
+from scipy.optimize import minimize
+
+def neg_log_likelihood_fine(theta):
+    theta = theta[0]
+    # Calcola il danno strutturale in base a theta
+    if theta <= 0.5:
+        damage_x = theta * 2.0
+        damage_y = 0.0
+    else: 
+        damage_x = 1.0
+        damage_y = (theta - 0.5) * 2.0
+
+    # Aggiorna il tensore di input per il modello surrogato
+    Input_HF_start[:, :, 2] = damage_x  
+    Input_HF_start[:, :, 3] = damage_y  
+
+    # Predici il segnale HF con il modello surrogato
+    Y_start = HF_net_to_pred.predict(Input_HF_start, verbose=0)
+
+    # Calcola la log-likelihood
+    like_single_obs_now = np.zeros((Y_start.shape[0], N_obs))
+    for i2 in range(N_obs):
+        like_single_obs_now[:, i2] = single_param_like_single_obs(
+            Y_HF[i1, i2, :, limit:], 
+            np.transpose(Y_start[:, limit:, :], axes=[0, 2, 1])
+        )
+    
+    like_tot_now = np.prod(like_single_obs_now, axis=1)
+    loglike_value = np.sum(np.log(like_tot_now))
+
+    return -loglike_value  # Minimizzazione della log-likelihood negativa
+
+# Valore iniziale per theta
+theta_init = np.array([0.5])  
+
+# Esegui l'ottimizzazione con scipy.optimize.minimize
+result_fine = minimize(neg_log_likelihood_fine, theta_init, method='Nelder-Mead')
+
+# Stampa i risultati
+print("Theta ottimizzato livello fine:", result_fine.x)
+print("Log-likelihood massimizzata livello fine:", -result_fine.fun)
+
+
+def neg_log_likelihood_coarse(theta):
+    
+    theta = theta[0]
+    # Calcola il danno strutturale in base a theta
+    if theta <= 0.5:
+        damage_x = theta * 2.0
+        damage_y = 0.0
+    else: 
+        damage_x = 1.0
+        damage_y = (theta - 0.5) * 2.0
+    
+    Input_HF_start[:, :, 2] = damage_x  #riempio tensore di input per modello surrogato
+    Input_HF_start[:, :, 3] = damage_y
+    
+    Input_HF_r = np.tile(Input_HF_start, (N_obs, 1, 1))
+    predictions = Regressor.predict([Y_HF_r[i1],Input_HF_r[:,0,0:4]],verbose=0)
+    predictions_true = predictions*delta_max+lik_min
+    loglike_value_coarse = np.sum(predictions_true)
+    
+    return -loglike_value_coarse
+
+# Valore iniziale per theta
+theta_init = np.array([0.5])  
+
+# Esegui l'ottimizzazione con scipy.optimize.minimize
+result_coarse = minimize(neg_log_likelihood_coarse, theta_init, method='Nelder-Mead')
+
+# Stampa i risultati
+print("Theta ottimizzato livello fine:", result_coarse.x)
+print("Log-likelihood massimizzata livello fine:", -result_coarse.fun)
 
 #%%
+# MCMC 2 LIVELLI 
 from tensorflow.python.ops.numpy_ops import np_config
 np_config.enable_numpy_behavior()
     
@@ -316,10 +393,18 @@ class custom_loglike_fine:
 
 Y_HF_r = np.transpose(Y_HF, (0, 1, 3, 2)) #(10,8,200,8)
 
+#covariance = np.eye(N_entries*n_channels)
+
 class custom_loglike_coarse:
     def __init__(self,Y_HF_r,Regressor):
         self.Y_HF_r = Y_HF_r
         self.Regressor = Regressor
+        # self.covariance = covariance
+        
+        # # set the initial bias.
+        # self.bias = np.zeros(N_entries*n_channels)
+        # # precompute the inverse of the covariance.
+        # self.cov_inverse = np.linalg.inv(self.covariance)
     
     @tf.function(jit_compile=True, reduce_retracing=True)
     def predict_optimized(self, Y_HF_r, Input_HF_r):
@@ -339,13 +424,23 @@ class custom_loglike_coarse:
             
         return predictions
     
+    # def set_bias(self,mean_bias,covariance_bias):
+        
+    #      self.bias = mean_bias
+    #      self.cov_bias = covariance_bias
+    #      if np.all(self.cov_bias < 1e-9):
+    #        pass
+    #      else:
+    #        self.cov_inverse = np.linalg.inv(self.cov + self.cov_bias)
+        
+    
     def loglike(self,Input_HF):
         
         Input_HF = tf.reshape(Input_HF, [n_chains,N_entries, 5 + n_channels])
         Input_HF_r = tf.tile(Input_HF, [N_obs, 1, 1])  # Replica Input_HF
         predictions = self.predict_optimized(Y_HF_r,Input_HF_r)
         predictions_true = predictions*delta_max+lik_min
-        loglike_value_coarse = tf.reduce_sum(predictions_true)
+        loglike_value_coarse = tf.reduce_sum(predictions_true) #- 4 * np.linalg.multi_dot((self.bias.T, self.cov_inverse, self.bias))
         
     
         return loglike_value_coarse
@@ -386,10 +481,18 @@ my_posterior_coarse = tda.Posterior(my_prior, my_loglike_coarse, my_coarse_model
 my_posterior_fine = tda.Posterior(my_prior, my_loglike_fine, my_fine_model)
 my_posteriors = [my_posterior_coarse, my_posterior_fine] 
 
-# Set up the proposal : random walk Metropolis
+# Set up the proposal : random walk Metropolis -> più veloce, ma ESS più bassa
 rwmh_cov = 1e-2*np.eye(1)
 rwmh_adaptive = True
 my_proposal = tda.GaussianRandomWalk(C=rwmh_cov, adaptive=rwmh_adaptive)
+
+# Adaptive Metropolis -> più lento, ma ESS più alta, modificare file utils per farlo funzionare
+am_cov = 1e-2*np.eye(1)
+am_t0 = 100
+am_sd = None
+am_epsilon = 1e-6
+am_adaptive = True
+#my_proposal = tda.AdaptiveMetropolis(C0=am_cov, t0=am_t0, sd=am_sd, epsilon=am_epsilon, adaptive=am_adaptive)
 
 # Run MCMC
 import os
@@ -398,13 +501,13 @@ if "CI" in os.environ:
     burnin = 20
 else:
     iterations = 4000
-    burnin = 400
+    burnin = 600
     
-my_chains = tda.sample(my_posterior_fine, my_proposal, iterations=iterations, n_chains=2, store_coarse_chain=False,force_sequential=True)
+my_chains = tda.sample(my_posterior_fine, my_proposal, iterations=iterations, n_chains=5,store_coarse_chain=False,force_sequential=True)
 
 #%%
 import arviz as az
-idata = tda.to_inference_data(my_chains, level='fine', burnin=burnin)  
+idata = tda.to_inference_data(my_chains,burnin=burnin)  
 
 params = idata.posterior["x0"].values
 
