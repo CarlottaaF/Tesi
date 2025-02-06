@@ -73,7 +73,7 @@ Y_HF = utils.load_HF_signals(file_paths, N_ist, n_channels, N_entries)
 
 ### SAMPLE HF INPUT ####
 
-n_ist_par = 10 # numero di diverse istanze di parametri generate da LHS
+n_ist_par = 40 # numero di diverse istanze di parametri generate da LHS
 X_HF = np.zeros((n_ist_par,N_ist,4)) #struttura che contiene, per ogni istanza di parametri, le mille istanze di ampiezza,frequenza e coordinate danno
 
 for i1 in range(n_ist_par):
@@ -210,17 +210,17 @@ Y_exp_r_train = utils.reshape_Y_exp(Y_exp_train_norm, N_ist_train, n_ist_par, n_
 
 #ottimizzazione bayesiana
 # Specify if you want to train the net or use it to make predictions (0-predict ; 1-train)
-predict_or_train = 0
+predict_or_train = 1
 
 # # Hyperparameters
 validation_split = 0.20
 batch_size = 32
-n_epochs = 150 
+n_epochs = 200 
 early_stop_epochs=15
-initial_lr = 0.001960066684694318
-decay_length = 0.86460859218533
+initial_lr = 1e-3
+decay_length = 0.6
 ratio_to_stop = 0.05
-k_reg = 1.7663804735735495e-07
+k_reg = 1.5572279377076895e-09
 rate_drop = 0.05
 
 if predict_or_train:
@@ -235,25 +235,27 @@ if predict_or_train:
              
         
         # Blocchi convoluzionali
-        x = layers.Conv1D(filters=64, kernel_size=13, activation='relu', kernel_regularizer=regularizers.l2(k_reg),padding='same')(input_series)
+        x = layers.Conv1D(filters=128, kernel_size=25, activation='relu', kernel_regularizer=regularizers.l2(k_reg),padding='same')(input_series)
         x = layers.MaxPooling1D(pool_size=2)(x)
-        x = layers.Conv1D(filters=64, kernel_size=13, activation='relu', kernel_regularizer=regularizers.l2(k_reg), padding='same')(x)
+        x = layers.Conv1D(filters=128, kernel_size=25, activation='relu', kernel_regularizer=regularizers.l2(k_reg), padding='same')(x)
         x = layers.MaxPooling1D(pool_size=2)(x)
-        x = layers.Conv1D(filters=32, kernel_size=25, activation='relu', kernel_regularizer=regularizers.l2(k_reg), padding='same')(x)
+        x = layers.Conv1D(filters=32, kernel_size=50, activation='relu', kernel_regularizer=regularizers.l2(k_reg), padding='same')(x)
         x = layers.MaxPooling1D(pool_size=2)(x)
 
         x = layers.Flatten()(x)
         
         # Layer completamente connessi
-        x = layers.Dense(8, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
-        x = layers.Dense(8, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
-        x = layers.Dense(8, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(32, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(32, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(32, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(32, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
+
 
         
         x = layers.Concatenate()([x, input_params])
-        x = layers.Dense(256, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
-        x = layers.Dense(256, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
-        x = layers.Dense(256, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(16, activation='gelu', kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(16, activation='gelu', kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(16, activation='gelu', kernel_regularizer=regularizers.l2(k_reg))(x)
 
      
         # Output layer per la regressione

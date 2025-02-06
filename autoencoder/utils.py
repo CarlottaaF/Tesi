@@ -200,7 +200,7 @@ def compute_likelihood(Y_exp, Y, N_ist, n_ist_par, n_channels, N_entries, remove
         for i2 in range(n_ist_par):
             somma = 0
             for i3 in range(n_channels):
-                rmse = RMSE(Y_exp[i1, i3, limit:], Y[i2, i1, i3, limit:])*10
+                rmse = RMSE(Y_exp[i1, i3, limit:], Y[i2, i1, i3, limit:])#*10
                 rsse = RSSE(Y_exp[i1, i3, limit:], Y[i2, i1, i3, limit:])
                 somma += np.log(1. / (np.sqrt(2. * np.pi) * rmse)) + (-((rsse ** 2) / (2. * (rmse ** 2)))) 
             likelihood[i1, i2] = somma  # Log-likelihood per l'istanza i1 e parametro i2
