@@ -74,7 +74,7 @@ Y_HF = utils.load_HF_signals(file_paths, N_ist, n_channels, N_entries)
 
 ### SAMPLE HF INPUT ####
 
-n_ist_par = 10 # numero di diverse istanze di parametri generate da LHS
+n_ist_par = 40 # numero di diverse istanze di parametri generate da LHS
 X_HF = np.zeros((n_ist_par,N_ist,4)) #struttura che contiene, per ogni istanza di parametri, le mille istanze di ampiezza,frequenza e coordinate danno
 
 for i1 in range(n_ist_par):
@@ -219,14 +219,16 @@ def objective(trial):
     filters_3 = trial.suggest_categorical('filters_3', [16, 32, 64])
     kernel_size_3 = trial.suggest_categorical('kernel_size_3', [7,13,25])
     k_reg = trial.suggest_loguniform('k_reg', 1e-7, 1e-1) #regularizer
-    learning_rate = trial.suggest_loguniform('learning_rate', 1e-7, 1e-1) #learning rate
-    batch_size = trial.suggest_categorical('batch_size', [16, 32, 64, 128])  
+    learning_rate = 1e-3 #trial.suggest_loguniform('learning_rate', 1e-7, 1e-1) #learning rate
+    batch_size = 32 #trial.suggest_categorical('batch_size', [16, 32, 64, 128])  
     neurons_1 = trial.suggest_categorical('neurons_1', [8, 16, 32, 64, 128, 256])
     neurons_2 = trial.suggest_categorical('neurons_2', [8, 16, 32, 64, 128, 256])
     n_layers1 = trial.suggest_int('n_layers1', 1, 5) #number of layers before concatenate
     n_layers2 = trial.suggest_int('n_layers2', 1, 5) #number of layers after concatenate
     activation = trial.suggest_categorical('activation', ['tanh', 'selu', 'gelu', 'relu'])
-    decay_length = trial.suggest_float('decay_length', 0.01, 1)
+    activation1 = trial.suggest_categorical('activation1', ['tanh', 'selu', 'gelu', 'relu'])
+    activation2 = trial.suggest_categorical('activation2', ['tanh', 'selu', 'gelu', 'relu'])
+    decay_length = 0.6 #trial.suggest_float('decay_length', 0.01, 1)
 
     n_epochs = 50  # -> aumentare
 
@@ -249,12 +251,12 @@ def objective(trial):
     # Fully connected layers
 
     for _ in range(n_layers1):
-        x = layers.Dense(neurons_1, activation=activation, kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(neurons_1, activation=activation1, kernel_regularizer=regularizers.l2(k_reg))(x)
 
     x = layers.Concatenate()([x, input_params])
     
     for _ in range(n_layers2):
-        x = layers.Dense(neurons_2, activation=activation, kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(neurons_2, activation=activation2, kernel_regularizer=regularizers.l2(k_reg))(x)
 
 
     # Output layer for regression
