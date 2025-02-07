@@ -74,7 +74,7 @@ Y_HF = utils.load_HF_signals(file_paths, N_ist, n_channels, N_entries)
 
 ### SAMPLE HF INPUT ####
 
-n_ist_par = 10 # numero di diverse istanze di parametri generate da LHS
+n_ist_par = 40 # numero di diverse istanze di parametri generate da LHS
 X_HF = np.zeros((n_ist_par,N_ist,4)) #struttura che contiene, per ogni istanza di parametri, le mille istanze di ampiezza,frequenza e coordinate danno
 
 for i1 in range(n_ist_par):
@@ -208,27 +208,28 @@ Y_exp_r_train = utils.reshape_Y_exp(Y_exp_train_norm, N_ist_train, n_ist_par, n_
  
 # Funzione obiettivo per Optuna
 # OTTIMIZZAZIONE BAYESIANA
-
 def objective(trial):
     # Hyperparameters suggested by Optuna
     # massimo 12 iperparametri
-    filters_1 = trial.suggest_categorical('filters_1', [16, 32, 64])
+    filters_1 = trial.suggest_categorical('filters_1', [32, 64, 128])
     kernel_size_1 = trial.suggest_categorical('kernel_size_1', [7,13,25])
-    filters_2 = trial.suggest_categorical('filters_2', [16, 32, 64])
+    filters_2 = trial.suggest_categorical('filters_2', [32, 64, 128])
     kernel_size_2 = trial.suggest_categorical('kernel_size_2', [7,13,25])
     filters_3 = trial.suggest_categorical('filters_3', [16, 32, 64])
-    kernel_size_3 = trial.suggest_categorical('kernel_size_3', [7,13,25])
-    k_reg = trial.suggest_loguniform('k_reg', 1e-7, 1e-1) #regularizer
-    learning_rate = trial.suggest_loguniform('learning_rate', 1e-7, 1e-1) #learning rate
-    batch_size = trial.suggest_categorical('batch_size', [16, 32, 64, 128])  
+    kernel_size_3 = trial.suggest_categorical('kernel_size_3', [13,25,50])
+    k_reg = trial.suggest_loguniform('k_reg', 1e-9, 1e-6)
+    learning_rate = 1e-3
+    batch_size = 32
     neurons_1 = trial.suggest_categorical('neurons_1', [8, 16, 32, 64, 128, 256])
     neurons_2 = trial.suggest_categorical('neurons_2', [8, 16, 32, 64, 128, 256])
     n_layers1 = trial.suggest_int('n_layers1', 1, 5) #number of layers before concatenate
     n_layers2 = trial.suggest_int('n_layers2', 1, 5) #number of layers after concatenate
     activation = trial.suggest_categorical('activation', ['tanh', 'selu', 'gelu', 'relu'])
-    decay_length = trial.suggest_float('decay_length', 0.01, 1)
+    activation1 = trial.suggest_categorical('activation1', ['tanh', 'selu', 'gelu', 'relu'])
+    activation2 = trial.suggest_categorical('activation2', ['tanh', 'selu', 'gelu', 'relu'])
+    decay_length = 0.6
 
-    n_epochs = 50  # -> aumentare
+    n_epochs = 200  # -> aumentare
 
     # Inputs
     input_series = layers.Input(shape=(N_entries, n_channels), name='Convolutional_inputs')
@@ -249,12 +250,12 @@ def objective(trial):
     # Fully connected layers
 
     for _ in range(n_layers1):
-        x = layers.Dense(neurons_1, activation=activation, kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(neurons_1, activation=activation1, kernel_regularizer=regularizers.l2(k_reg))(x)
 
     x = layers.Concatenate()([x, input_params])
     
     for _ in range(n_layers2):
-        x = layers.Dense(neurons_2, activation=activation, kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(neurons_2, activation=activation2, kernel_regularizer=regularizers.l2(k_reg))(x)
 
 
     # Output layer for regression
@@ -287,7 +288,7 @@ def objective(trial):
 
 # 2. Create an Optuna study and optimize the objective function
 study = optuna.create_study(direction='minimize')  
-study.optimize(objective, n_trials=10)
+study.optimize(objective, n_trials=2000, n_jobs=4)
 
 logging.info(f"Best Hyperparameters: {study.best_params}")
 
