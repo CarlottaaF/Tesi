@@ -208,19 +208,18 @@ Y_exp_r_train = utils.reshape_Y_exp(Y_exp_train_norm, N_ist_train, n_ist_par, n_
  
 # Funzione obiettivo per Optuna
 # OTTIMIZZAZIONE BAYESIANA
-
 def objective(trial):
     # Hyperparameters suggested by Optuna
     # massimo 12 iperparametri
-    filters_1 = trial.suggest_categorical('filters_1', [16, 32, 64])
+    filters_1 = trial.suggest_categorical('filters_1', [32, 64, 128])
     kernel_size_1 = trial.suggest_categorical('kernel_size_1', [7,13,25])
-    filters_2 = trial.suggest_categorical('filters_2', [16, 32, 64])
+    filters_2 = trial.suggest_categorical('filters_2', [32, 64, 128])
     kernel_size_2 = trial.suggest_categorical('kernel_size_2', [7,13,25])
     filters_3 = trial.suggest_categorical('filters_3', [16, 32, 64])
-    kernel_size_3 = trial.suggest_categorical('kernel_size_3', [7,13,25])
-    k_reg = trial.suggest_loguniform('k_reg', 1e-7, 1e-1) #regularizer
-    learning_rate = 1e-3 #trial.suggest_loguniform('learning_rate', 1e-7, 1e-1) #learning rate
-    batch_size = 32 #trial.suggest_categorical('batch_size', [16, 32, 64, 128])  
+    kernel_size_3 = trial.suggest_categorical('kernel_size_3', [13,25,50])
+    k_reg = trial.suggest_loguniform('k_reg', 1e-9, 1e-6)
+    learning_rate = 1e-3
+    batch_size = 32
     neurons_1 = trial.suggest_categorical('neurons_1', [8, 16, 32, 64, 128, 256])
     neurons_2 = trial.suggest_categorical('neurons_2', [8, 16, 32, 64, 128, 256])
     n_layers1 = trial.suggest_int('n_layers1', 1, 5) #number of layers before concatenate
@@ -228,9 +227,9 @@ def objective(trial):
     activation = trial.suggest_categorical('activation', ['tanh', 'selu', 'gelu', 'relu'])
     activation1 = trial.suggest_categorical('activation1', ['tanh', 'selu', 'gelu', 'relu'])
     activation2 = trial.suggest_categorical('activation2', ['tanh', 'selu', 'gelu', 'relu'])
-    decay_length = 0.6 #trial.suggest_float('decay_length', 0.01, 1)
+    decay_length = 0.6
 
-    n_epochs = 50  # -> aumentare
+    n_epochs = 200  # -> aumentare
 
     # Inputs
     input_series = layers.Input(shape=(N_entries, n_channels), name='Convolutional_inputs')
@@ -289,7 +288,7 @@ def objective(trial):
 
 # 2. Create an Optuna study and optimize the objective function
 study = optuna.create_study(direction='minimize')  
-study.optimize(objective, n_trials=10)
+study.optimize(objective, n_trials=2000, n_jobs=4)
 
 logging.info(f"Best Hyperparameters: {study.best_params}")
 
