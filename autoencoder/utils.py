@@ -6,6 +6,50 @@ Created on Sat Dec 28 18:20:17 2024
 """
 import numpy as np
 
+def input_true ():
+    
+    #labels danno in pacchetti da 1000 (N_ist)
+    Coord_x_path = 'C:\\Users\\Ruggi\\Carlotta\\istantrain_1_0\\Coord_x.csv'
+    Coord_x = np.genfromtxt(Coord_x_path)
+    Coord_y_path = 'C:\\Users\\Ruggi\\Carlotta\\istantrain_1_0\\Coord_y.csv'
+    Coord_y      = np.genfromtxt(Coord_y_path)
+    
+    #normalizzo dati in ingresso
+    Coord_x_min = np.min(Coord_x)
+    Coord_x_max = np.max(Coord_x)
+    Coord_y_min = np.min(Coord_y)
+    Coord_y_max = np.max(Coord_y)
+    Coord_x_delta_max = Coord_x_max - Coord_x_min
+    Coord_y_delta_max = Coord_y_max - Coord_y_min
+    Coord_x = (Coord_x - Coord_x_min) / Coord_x_delta_max #normalizzato tra 0 e 1
+    Coord_y = (Coord_y - Coord_y_min) / Coord_y_delta_max #normalizzato tra 0 e 1
+    N_ist = len(Coord_x)
+    
+    #labels usage in pacchetti da 1000 (N_ist)
+    Frequency_path = 'C:\\Users\\Ruggi\\Carlotta\\istantrain_1_0\\Frequency.csv'
+    Frequency = np.genfromtxt(Frequency_path)
+    Amplitude_path = 'C:\\Users\\Ruggi\\Carlotta\\istantrain_1_0\\Amplitude.csv'
+    Amplitude = np.genfromtxt(Amplitude_path)
+    
+    #normalizzo dati in ingresso
+    freq_min = np.min(Frequency)
+    freq_max = np.max(Frequency)
+    Ampl_min = np.min(Amplitude)
+    Ampl_max = np.max(Amplitude)
+    freq_delta_max = freq_max - freq_min
+    Ampl_delta_max = Ampl_max - Ampl_min
+    Frequency = (Frequency - freq_min) / freq_delta_max #normalizzato tra 0 e 1
+    Amplitude = (Amplitude - Ampl_min) / Ampl_delta_max #normalizzato tra 0 e 1
+    
+    #organizzo i dati
+    X1_HF = np.zeros((N_ist,4))
+    X1_HF[:,0] = Frequency
+    X1_HF[:,1] = Amplitude
+    X1_HF[:,2] = Coord_x
+    X1_HF[:,3] = Coord_y
+    
+    return X1_HF
+
 def load_HF_signals(file_paths,N_ist,n_channels,N_entries):
     """
     Elabora i dati dai file CSV e restituisce una matrice strutturata delle osservazioni.
@@ -200,7 +244,7 @@ def compute_likelihood(Y_exp, Y, N_ist, n_ist_par, n_channels, N_entries, remove
         for i2 in range(n_ist_par):
             somma = 0
             for i3 in range(n_channels):
-                rmse = RMSE(Y_exp[i1, i3, limit:], Y[i2, i1, i3, limit:])#*10
+                rmse = RMSE(Y_exp[i1, i3, limit:], Y[i2, i1, i3, limit:])*10
                 rsse = RSSE(Y_exp[i1, i3, limit:], Y[i2, i1, i3, limit:])
                 somma += np.log(1. / (np.sqrt(2. * np.pi) * rmse)) + (-((rsse ** 2) / (2. * (rmse ** 2)))) 
             likelihood[i1, i2] = somma  # Log-likelihood per l'istanza i1 e parametro i2

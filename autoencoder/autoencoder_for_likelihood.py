@@ -73,21 +73,38 @@ Y_HF = utils.load_HF_signals(file_paths, N_ist, n_channels, N_entries)
 
 ### SAMPLE HF INPUT ####
 
-n_ist_par = 40 # numero di diverse istanze di parametri generate da LHS
+n_ist_par = 10 # numero di diverse istanze di parametri generate da LHS
 X_HF = np.zeros((n_ist_par,N_ist,4)) #struttura che contiene, per ogni istanza di parametri, le mille istanze di ampiezza,frequenza e coordinate danno
 
+# for i1 in range(n_ist_par):
+#     sampler = qmc.LatinHypercube(d=3) #ho 3 input: frequenza, ampiezza e coord danno
+#     sample = sampler.random(n=1000) #voglio generare 1000 valori per i miei 3 input
+#     X_HF[i1,:,0] = sample[:,0]
+#     X_HF[i1,:,1] = sample[:,1]
+#     for i2 in range(1000):
+#         if sample[i2, 2] <= 0.5:  #  se il danno è nel primo braccio della struttura
+#             X_HF[i1,i2, 2] = sample[i2, 2] * 2 #coordinata x danno
+#             X_HF[i1,i2, 3] = 0 #coordinata y danno
+#         else:
+#             X_HF[i1,i2, 2] = 1
+#             X_HF[i1,i2, 3] = (sample[i2, 2] - 0.5) * 2
+            
 for i1 in range(n_ist_par):
-    sampler = qmc.LatinHypercube(d=3) #ho 3 input: frequenza, ampiezza e coord danno
-    sample = sampler.random(n=1000) #voglio generare 1000 valori per i miei 3 input
-    X_HF[i1,:,0] = sample[:,0]
-    X_HF[i1,:,1] = sample[:,1]
+    sampler = qmc.LatinHypercube(d=1) #ho 1 input: coord danno
+    sample = sampler.random(n=1000) #voglio generare 1000 valori per il mio input
+
     for i2 in range(1000):
-        if sample[i2, 2] <= 0.5:  #  se il danno è nel primo braccio della struttura
-            X_HF[i1,i2, 2] = sample[i2, 2] * 2 #coordinata x danno
+        if sample[i2, 0] <= 0.5:  #  se il danno è nel primo braccio della struttura
+            X_HF[i1,i2, 2] = sample[i2, 0] * 2 #coordinata x danno
             X_HF[i1,i2, 3] = 0 #coordinata y danno
         else:
             X_HF[i1,i2, 2] = 1
-            X_HF[i1,i2, 3] = (sample[i2, 2] - 0.5) * 2
+            X_HF[i1,i2, 3] = (sample[i2, 0] - 0.5) * 2
+            
+for i1 in range(n_ist_par):
+    X_HF[i1,:,0] = utils.input_true()[:,0]
+    X_HF[i1,:,1] = utils.input_true()[:,1]
+    
 
 #%%
 
@@ -194,9 +211,9 @@ likelihood_test = utils.compute_likelihood(Y_exp_test_norm, Y_test, N_ist_test, 
 likelihood_r_train = utils.likelihood_reshaped(likelihood_train, N_ist_train, n_ist_par)
 
 #normalizzo likelihood
-lik_min_train = np.min(likelihood_r_train)
+lik_min_train = np.min(likelihood_r_train) #-38.14900633995325
 lik_max_train = np.max(likelihood_r_train)
-delta_max_train = lik_max_train-lik_min_train
+delta_max_train = lik_max_train-lik_min_train #48.25939812179713
 likelihood_r_norm_train = (likelihood_r_train - lik_min_train)/delta_max_train
 
 Input_HF_r_train = utils.reshape_input_HF(Input_HF_train, N_ist_train, n_ist_par)
@@ -210,17 +227,17 @@ Y_exp_r_train = utils.reshape_Y_exp(Y_exp_train_norm, N_ist_train, n_ist_par, n_
 
 #ottimizzazione bayesiana
 # Specify if you want to train the net or use it to make predictions (0-predict ; 1-train)
-predict_or_train = 1
+predict_or_train = 0
 
 # # Hyperparameters
 validation_split = 0.20
 batch_size = 32
-n_epochs = 200 
+n_epochs = 150
 early_stop_epochs=15
-initial_lr = 1e-3
-decay_length = 0.6
+initial_lr = 0.00196
+decay_length = 0.86
 ratio_to_stop = 0.05
-k_reg = 1.5572279377076895e-09
+k_reg = 1.76638e-07
 rate_drop = 0.05
 
 if predict_or_train:
@@ -235,27 +252,26 @@ if predict_or_train:
              
         
         # Blocchi convoluzionali
-        x = layers.Conv1D(filters=128, kernel_size=25, activation='relu', kernel_regularizer=regularizers.l2(k_reg),padding='same')(input_series)
+        x = layers.Conv1D(filters=64, kernel_size=13, activation='relu', kernel_regularizer=regularizers.l2(k_reg),padding='same')(input_series)
         x = layers.MaxPooling1D(pool_size=2)(x)
-        x = layers.Conv1D(filters=128, kernel_size=25, activation='relu', kernel_regularizer=regularizers.l2(k_reg), padding='same')(x)
+        x = layers.Conv1D(filters=64, kernel_size=13, activation='relu', kernel_regularizer=regularizers.l2(k_reg), padding='same')(x)
         x = layers.MaxPooling1D(pool_size=2)(x)
-        x = layers.Conv1D(filters=32, kernel_size=50, activation='relu', kernel_regularizer=regularizers.l2(k_reg), padding='same')(x)
+        x = layers.Conv1D(filters=32, kernel_size=25, activation='relu', kernel_regularizer=regularizers.l2(k_reg), padding='same')(x)
         x = layers.MaxPooling1D(pool_size=2)(x)
 
         x = layers.Flatten()(x)
         
         # Layer completamente connessi
-        x = layers.Dense(32, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
-        x = layers.Dense(32, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
-        x = layers.Dense(32, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
-        x = layers.Dense(32, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(8, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(8, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(8, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
 
 
         
         x = layers.Concatenate()([x, input_params])
-        x = layers.Dense(16, activation='gelu', kernel_regularizer=regularizers.l2(k_reg))(x)
-        x = layers.Dense(16, activation='gelu', kernel_regularizer=regularizers.l2(k_reg))(x)
-        x = layers.Dense(16, activation='gelu', kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(256, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(256, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
+        x = layers.Dense(256, activation='relu', kernel_regularizer=regularizers.l2(k_reg))(x)
 
      
         # Output layer per la regressione
@@ -331,123 +347,49 @@ else:
 
 
 #%%
-# # Specify if you want to train the net or use it to make predictions (0-predict ; 1-train)
-# predict_or_train = 0
+# Predict con i parametri veri
 
-# # # Hyperparameters
-# validation_split = 0.20
-# batch_size = 32
-# n_epochs = 150 
-# early_stop_epochs=15
-# initial_lr = 0.001
-# decay_length = 0.8
-# ratio_to_stop = 0.05
-# k_reg = 1e-4
-# rate_drop = 0.05
+X1_HF = utils.input_true()
+X1_HF_test = X1_HF[test_indices]
+Input_HF_true = np.zeros((n_ist_par, N_ist_test, N_entries, 5 + n_channels))
+Input_HF_true[:,:,:,4:13] = Input_HF_test[:,:,:,4:13]
 
-# if predict_or_train:
+for i1 in range(n_ist_par):
+  for i3 in range(N_ist_test):
+    Input_HF_true[i1, i3, :, 0] = X1_HF_test[i3, 0]  # Frequenza
+    Input_HF_true[i1, i3, :, 1] = X1_HF_test[i3, 1]  # Ampiezza
+    Input_HF_true[i1, i3, :, 2] = X1_HF_test[i3, 2]  # Coord_x danno
+    Input_HF_true[i1, i3, :, 3] = X1_HF_test[i3, 3]  # Coord_y danno
+    
+    
+Input_HF_true_r = utils.reshape_input_HF(Input_HF_true,N_ist_test,n_ist_par)
 
-#         try: 
-#              os.mkdir(path_save) 
-#         except: 
-#              print('ERRORE: La cartella esiste giÃ ')
-             
-#         input_series  = layers.Input(shape=(N_entries, n_channels), name='Convolutional_inputs')
-#         input_params  = layers.Input(shape=(4,), name='Parameters_inputs')
-             
-        
-#         # Blocchi convoluzionali
-#         x = layers.Conv1D(filters=32, kernel_size=7, activation='selu', kernel_regularizer=regularizers.l2(k_reg),padding='same')(input_series)
-#         x = layers.MaxPooling1D(pool_size=2)(x)
-#         x = layers.Conv1D(filters=64, kernel_size=5, activation='selu', kernel_regularizer=regularizers.l2(k_reg), padding='same')(x)
-#         x = layers.MaxPooling1D(pool_size=2)(x)
-#         x = layers.Conv1D(filters=32, kernel_size=3, activation='selu', kernel_regularizer=regularizers.l2(k_reg), padding='same')(x)
-#         x = layers.MaxPooling1D(pool_size=2)(x)
+predictions_input_true = Regressor.predict([Y_exp_r_test, Input_HF_true_r[:,0:4]]).flatten()
+predictions_true_input_true = predictions_input_true*delta_max_train+lik_min_train
 
-#         x = layers.Flatten()(x)
-        
-#         # Layer completamente connessi
-#         x = layers.Dense(128, activation='selu', kernel_regularizer=regularizers.l2(k_reg))(x)
-#         x = layers.Dense(64, activation='selu', kernel_regularizer=regularizers.l2(k_reg))(x)
-#         x = layers.Dense(32, activation='selu', kernel_regularizer=regularizers.l2(k_reg))(x)
-#         x = layers.Dense(32, activation='selu', kernel_regularizer=regularizers.l2(k_reg))(x)
-#         x = layers.Dense(32, activation='selu', kernel_regularizer=regularizers.l2(k_reg))(x)
+Y_true = np.zeros((n_ist_par, N_ist_test, n_channels, N_entries)) 
+for i1 in range(n_ist_par):
+    Y_i = HF_net_to_pred.predict(Input_HF_true[i1, :, :, :], verbose=0)
+    Y_true[i1] = np.transpose(Y_i, (0, 2, 1))
 
-        
-#         x = layers.Concatenate()([x, input_params])
-#         x = layers.Dense(256, activation='selu', kernel_regularizer=regularizers.l2(k_reg))(x)
-#         x = layers.Dense(128, activation='selu', kernel_regularizer=regularizers.l2(k_reg))(x)
+likelihood_true = utils.compute_likelihood(Y_exp_test_norm, Y_true, N_ist_test, n_ist_par, n_channels, N_entries, removed_ratio, limit)
+likelihood_r_true=utils.likelihood_reshaped(likelihood_true, N_ist_test, n_ist_par)
 
-     
-#         # Output layer per la regressione
-#         output = layers.Dense(1, activation='linear')(x)
-  
-        
-#         # Definizione del modello
-#         Regressor = keras.models.Model([input_series, input_params], output, name='Regressor_Model')
-#         Regressor.summary()
-        
-#         # Compilazione
+# Plot usando hexbin
+plt.figure(figsize=(6.5, 6.5), dpi=100)
+hb = plt.hexbin(likelihood_r_true, predictions_true_input_true, gridsize=50, cmap='plasma', mincnt=1)
+cb = plt.colorbar(hb, label='Frequency')
 
-#         Regressor.compile(optimizer = keras.optimizers.Adam(learning_rate=keras.optimizers.schedules.CosineDecay(initial_learning_rate=0.0014, decay_steps=int(0.74*n_epochs*N_ist**2*(1-validation_split)/batch_size), alpha=ratio_to_stop)),
-#                             loss='mse',
-#                             metrics=['mae'])
+# Linea guida y=x
+lims = [min(likelihood_r_true.min(), predictions_true_input_true.min()), 
+        max(likelihood_r_true.max(), predictions_true_input_true.max())]
+plt.plot(lims, lims, 'gold', linewidth=1.5, zorder=-1, label='y=x')
 
-#         # Early stopping
-#         early_stop = keras.callbacks.EarlyStopping(monitor='val_loss', patience=early_stop_epochs, restore_best_weights=True)
-        
-#         # Addestramento
-#         history = Regressor.fit([Y_exp_r_train, Input_HF_r_train[:, 0:4]],
-#                                 likelihood_r_norm_train,
-#                                 epochs=n_epochs,  
-#                                 batch_size=batch_size,
-#                                 validation_split=0.2,
-#                                 verbose=2,
-#                                 callbacks=[early_stop])
+# Etichette e legenda
+plt.xlabel('True Value [%]')
+plt.ylabel('Prediction [%]')
+plt.title('Hexbin Density Plot considering the true input')
+plt.legend(loc='upper left') 
 
-            
-#         hist = pd.DataFrame(history.history)
-#         hist['epoch'] = history.epoch
-#         hist.tail()
-#         hist.to_pickle(path_save + 'hist.pkl')
-#         Regressor.save(path_save + 'model')
-
-# else:        
-#         Regressor = keras.models.load_model(path_restore + 'model')
-        
-#         with open(path_restore + 'hist.pkl', 'rb') as file:
-#             hist = pickle.load(file)
-           
-        
-#         #model test
-
-#         Input_HF_r_test = utils.reshape_input_HF(Input_HF_test, N_ist_test, n_ist_par)
-#         Y_exp_r_test = utils.reshape_Y_exp(Y_exp_test_norm, N_ist_test, n_ist_par, n_channels, N_entries)
-        
-#         predictions = Regressor.predict([Y_exp_r_test, Input_HF_r_test[:,0:4]]).flatten() 
-        
-#         #riscalo le predizioni in modo che non siano più tra zero e uno
-#         predictions_true = predictions*delta_max_train + lik_min_train
-                
-#         likelihood_r_test=utils.likelihood_reshaped(likelihood_test, N_ist_test, n_ist_par)
-        
-        
-#         # Plot usando hexbin
-#         plt.figure(figsize=(6.5, 6.5), dpi=100)
-#         hb = plt.hexbin(likelihood_r_test, predictions_true, gridsize=50, cmap='plasma', mincnt=1)
-#         cb = plt.colorbar(hb, label='Frequency')
-        
-#         # Linea guida y=x
-#         lims = [min(likelihood_r_test.min(), predictions_true.min()), 
-#                 max(likelihood_r_test.max(), predictions_true.max())]
-#         plt.plot(lims, lims, 'gold', linewidth=1.5, zorder=-1, label='y=x')
-        
-#         # Etichette e legenda
-#         plt.xlabel('True Value [%]')
-#         plt.ylabel('Prediction [%]')
-#         plt.title('Hexbin Density Plot')
-#         plt.legend(loc='upper left') 
-        
-#         plt.show()
-
+plt.show()
 
