@@ -34,7 +34,7 @@ RUN conda update -n base -c defaults conda -y && \
     conda install -n fenics_env -c conda-forge fenics numpy scipy matplotlib pyDOE scikit-learn tqdm -y
 
 # Copia la cartella "data_generation_cartella" all'interno del contenitore
-COPY data_generation_cartella /data_generation_cartella
+#COPY data_generation_cartella /data_generation_cartella
 
 # Aggiungi il comando per attivare l'ambiente Conda all'avvio del container
 # Attiva Conda all'interno del CMD
