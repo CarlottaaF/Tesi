@@ -33,6 +33,12 @@ RUN conda update -n base -c defaults conda -y && \
     conda create -n fenics_env python=3.10 -y && \
     conda install -n fenics_env -c conda-forge fenics numpy scipy matplotlib pyDOE scikit-learn tqdm -y
 
+RUN /opt/conda/envs/fenics_env/bin/pip install tensorflow keras
+
+RUN conda install -n fenics_env -c conda-forge arviz numba -y 
+RUN /opt/conda/envs/fenics_env/bin/pip install GPy
+RUN /opt/conda/envs/fenics_env/bin/pip install tinyda
+
 # Copia la cartella "data_generation_cartella" all'interno del contenitore
 #COPY data_generation_cartella /data_generation_cartella
 
