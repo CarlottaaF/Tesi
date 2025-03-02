@@ -80,7 +80,7 @@ log_like_test = log_like_test.reshape(-1, 1)
 # IMPOSTARE IL KERNEL PER IL GAUSSIAN PROCESS
 
 # classRBF(input_dim, variance=1.0, lengthscale=None, ARD=False, active_dims=None, name='rbf', useGPU=False, inv_l=False
-kernel = gpy.kern.RBF(input_dim=n_parameters, variance=1.0, lengthscale=None) + gpy.kern.White(input_dim=n_parameters, variance=0.1)
+kernel = gpy.kern.RBF(input_dim=n_parameters, variance=1.0, lengthscale=None) #+ gpy.kern.White(input_dim=n_parameters, variance=0.1)
 # aggiungere un white noise?
 
 
@@ -97,9 +97,7 @@ Z = X_train_new[np.random.choice(how_many_train, size=n_inducing_points, replace
 # Z = kmeans.cluster_centers_  # Centroidi dei cluster
 
 
-
-
-train_or_test = 1 # 1 for train, 0 for test
+train_or_test = 0 # 1 for train, 0 for test
 
 
 if train_or_test == 1:
@@ -107,7 +105,7 @@ if train_or_test == 1:
     # ALLENARE IL MODELLO SRGP
 
     # Creazione del modello di regressione GP sparso
-    m = gpy.models.SparseGPRegression(X_train_new, log_like_train_norm, Z=Z)
+    m = gpy.models.SparseGPRegression(X_train_new, log_like_train_norm, kernel=kernel, Z=Z)
     print("Modello iniziale:")
     print(m)
     
@@ -115,40 +113,11 @@ if train_or_test == 1:
     
     # **Ottimizzazione 1: fissiamo gli inducing points e ottimizziamo i parametri del kernel**
     m.inducing_inputs.fix()
-    best_log_marginal_likelihood = -np.inf
-    best_variance = None
-    best_lengthscale = None
-    best_gaussian_noise_variance = None
-    
-    # **Multi-start optimization**
-    num_restarts = 10
-
-    for _ in range(num_restarts):
-        rand_gen = np.random.default_rng() 
-        m.rbf.variance = rand_gen.uniform(0.01,10)
-        #print(f"Variance: {m.rbf.variance}")
-        m.rbf.lengthscale = rand_gen.uniform(0.1,5)
-        #print(f"Lengthscale: {m.rbf.lengthscale}")
-        m.likelihood.variance = rand_gen.uniform(0.001,1)
-        #print(f"Gaussian noise variance: {m.likelihood.variance}")
-        m.optimize('bfgs')
-        log_marginal_likelihood = m.log_likelihood()
-        
-        if log_marginal_likelihood > best_log_marginal_likelihood:
-            best_log_marginal_likelihood = log_marginal_likelihood
-            best_variance = m.rbf.variance
-            best_lengthscale = m.rbf.lengthscale
-            best_gaussian_noise_variance = m.Gaussian_noise.variance
-
-    # Imposta il modello con i migliori parametri trovati
-    if all(x is not None for x in [best_variance, best_lengthscale, best_gaussian_noise_variance]):
-        m.rbf.variance = best_variance
-        m.rbf.lengthscale = best_lengthscale
-        m.Gaussian_noise.variance = best_gaussian_noise_variance
-
+    m.rbf.variance = 9.451911805133141
+    m.rbf.lengthscale = 2.6271624691967483
+    m.Gaussian_noise.variance = 0.010561301193138393
+    m.optimize('bfgs')
     print(m)
-
-
     
     # **Ottimizzazione 2: sblocchiamo gli inducing points e ottimizziamo tutti i parametri**
     m.Z.unconstrain()
