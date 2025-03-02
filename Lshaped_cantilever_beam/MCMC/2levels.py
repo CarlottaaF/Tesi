@@ -63,7 +63,7 @@ n_chains = 1
 n_parameters = 1 #parametro di danneggiamento
 
 #Apply MCMC for a testing instance (for each we have N_obs observations)
-which_ist = 1 #tra 0 e 9
+which_ist = 3 #tra 0 e 9
 
 
 #%%
@@ -177,8 +177,8 @@ Input_HF_start[:,:,4] = np.linspace(signal_resolution, signal_resolution * N_ent
 X_input_MF[:,0] = X_true[i1, 0] #forzare Frequency_true corrispondente a which_ist
 X_input_MF[:,1] = X_true[i1, 1] #frozare Amplitude_true corrispondente a  which_ist
 
-lik_min = -48.639039929443115
-delta_max = 50.38970094774706
+lik_min = -38.14900633995325
+delta_max = 48.25939812179713
 
 def RMSE(vect1, vect2):
     return np.sqrt(np.mean(np.square(vect1 - vect2)))
@@ -214,95 +214,116 @@ for i3 in range(n_channels):
     
 #%%
 
-Y_HF_r = np.transpose(Y_HF, (0, 1, 3, 2)) #(10,8,200,8)
+# Y_HF_r = np.transpose(Y_HF, (0, 1, 3, 2)) #(10,8,200,8)
 
-#OTTIMIZZAZIONE
+# #OTTIMIZZAZIONE
 
-from scipy.optimize import minimize
+# from scipy.optimize import minimize
 
-def neg_log_likelihood_fine(theta):
-    theta = theta[0]
-    # Calcola il danno strutturale in base a theta
-    if theta <= 0.5:
-        damage_x = theta * 2.0
-        damage_y = 0.0
-    else: 
-        damage_x = 1.0
-        damage_y = (theta - 0.5) * 2.0
+# def neg_log_likelihood_fine(theta):
+#     theta = theta[0]
+#     # Calcola il danno strutturale in base a theta
+#     if theta <= 0.5:
+#         damage_x = theta * 2.0
+#         damage_y = 0.0
+#     else: 
+#         damage_x = 1.0
+#         damage_y = (theta - 0.5) * 2.0
 
-    # Aggiorna il tensore di input per il modello surrogato
-    Input_HF_start[:, :, 2] = damage_x  
-    Input_HF_start[:, :, 3] = damage_y  
+#     # Aggiorna il tensore di input per il modello surrogato
+#     Input_HF_start[:, :, 2] = damage_x  
+#     Input_HF_start[:, :, 3] = damage_y  
 
-    # Predici il segnale HF con il modello surrogato
-    Y_start = HF_net_to_pred.predict(Input_HF_start, verbose=0)
+#     # Predici il segnale HF con il modello surrogato
+#     Y_start = HF_net_to_pred.predict(Input_HF_start, verbose=0)
 
-    # Calcola la log-likelihood
-    like_single_obs_now = np.zeros((Y_start.shape[0], N_obs))
-    for i2 in range(N_obs):
-        like_single_obs_now[:, i2] = single_param_like_single_obs(
-            Y_HF[i1, i2, :, limit:], 
-            np.transpose(Y_start[:, limit:, :], axes=[0, 2, 1])
-        )
+#     # Calcola la log-likelihood
+#     like_single_obs_now = np.zeros((Y_start.shape[0], N_obs))
+#     for i2 in range(N_obs):
+#         like_single_obs_now[:, i2] = single_param_like_single_obs(
+#             Y_HF[i1, i2, :, limit:], 
+#             np.transpose(Y_start[:, limit:, :], axes=[0, 2, 1])
+#         )
     
-    like_tot_now = np.prod(like_single_obs_now, axis=1)
-    loglike_value = np.sum(np.log(like_tot_now))
+#     like_tot_now = np.prod(like_single_obs_now, axis=1)
+#     loglike_value = np.sum(np.log(like_tot_now))
 
-    return -loglike_value  # Minimizzazione della log-likelihood negativa
+#     return -loglike_value  # Minimizzazione della log-likelihood negativa
 
-# Valore iniziale per theta
-theta_init = np.array([0.5])  
+# # Valore iniziale per theta
+# theta_init = np.array([0.5])  
 
-# Esegui l'ottimizzazione con scipy.optimize.minimize
-result_fine = minimize(neg_log_likelihood_fine, theta_init, method='Nelder-Mead')
+# # Esegui l'ottimizzazione con scipy.optimize.minimize
+# result_fine = minimize(neg_log_likelihood_fine, theta_init, method='Nelder-Mead')
 
-# Stampa i risultati
-print("Theta ottimizzato livello fine:", result_fine.x)
-print("Log-likelihood massimizzata livello fine:", -result_fine.fun)
+# # Stampa i risultati
+# print("Theta ottimizzato livello fine:", result_fine.x)
 
 
-def neg_log_likelihood_coarse(theta):
+# def neg_log_likelihood_coarse(theta):
     
-    theta = theta[0]
-    # Calcola il danno strutturale in base a theta
-    if theta <= 0.5:
-        damage_x = theta * 2.0
-        damage_y = 0.0
-    else: 
-        damage_x = 1.0
-        damage_y = (theta - 0.5) * 2.0
+#     theta = theta[0]
+#     # Calcola il danno strutturale in base a theta
+#     if theta <= 0.5:
+#         damage_x = theta * 2.0
+#         damage_y = 0.0
+#     else: 
+#         damage_x = 1.0
+#         damage_y = (theta - 0.5) * 2.0
     
-    Input_HF_start[:, :, 2] = damage_x  #riempio tensore di input per modello surrogato
-    Input_HF_start[:, :, 3] = damage_y
+#     Input_HF_start[:, :, 2] = damage_x  #riempio tensore di input per modello surrogato
+#     Input_HF_start[:, :, 3] = damage_y
     
-    Input_HF_r = np.tile(Input_HF_start, (N_obs, 1, 1))
-    predictions = Regressor.predict([Y_HF_r[i1],Input_HF_r[:,0,0:4]],verbose=0)
-    predictions_true = predictions*delta_max+lik_min
-    loglike_value_coarse = np.sum(predictions_true)
+#     Input_HF_r = np.tile(Input_HF_start, (N_obs, 1, 1))
+#     predictions = Regressor.predict([Y_HF_r[i1],Input_HF_r[:,0,0:4]],verbose=0)
+#     predictions_true = predictions*delta_max+lik_min
+#     loglike_value_coarse = np.sum(predictions_true)
     
-    return -loglike_value_coarse
+#     return -loglike_value_coarse
 
-# Valore iniziale per theta
-theta_init = np.array([0.5])  
+# # Valore iniziale per theta
+# theta_init = np.array([0.5])  
 
-# Esegui l'ottimizzazione con scipy.optimize.minimize
-result_coarse = minimize(neg_log_likelihood_coarse, theta_init, method='Nelder-Mead')
+# # Esegui l'ottimizzazione con scipy.optimize.minimize
+# result_coarse = minimize(neg_log_likelihood_coarse, theta_init, method='Nelder-Mead')
 
-# Stampa i risultati
-print("Theta ottimizzato livello fine:", result_coarse.x)
-print("Log-likelihood massimizzata livello fine:", -result_coarse.fun)
+# # Stampa i risultati
+# print("Theta ottimizzato livello coarse:", result_coarse.x)
 
 #%%
 # MCMC 2 LIVELLI 
 from tensorflow.python.ops.numpy_ops import np_config
 np_config.enable_numpy_behavior()
+
+
+class ParameterHistory:
+    def __init__(self):
+        self.history = []
+
+    def add(self, parameter):
+        self.history.append(parameter)
+
+    def get_mean_std(self):
+
+        if len(self.history) == 0:
+            return 0.0, 1.0  # Valori di default per evitare problemi
+
+        mean = np.mean(self.history)
+        std = np.std(self.history)
+
+        if std < 1e-6:  # Se la deviazione standard è troppo piccola
+            std = 1e-6  # Evita divisioni per zero
+        return mean, std
     
+param_history = ParameterHistory()
+   
 class MySurrogateModel_fine:
-    def __init__(self, n_channels, N_entries, LF_signals_start, HF_net_to_pred):
+    def __init__(self, n_channels, N_entries, LF_signals_start, HF_net_to_pred,param_history):
         self.n_channels = n_channels
         self.N_entries = N_entries
         self.LF_signals_start = LF_signals_start
         self.HF_net_to_pred = HF_net_to_pred
+        self.param_history = param_history
 
     @tf.function(jit_compile=True,reduce_retracing=True)
     def predict_per_uno(self, Input_HF_start):
@@ -320,6 +341,18 @@ class MySurrogateModel_fine:
         return Y_start
     
     def __call__(self, parameters):
+        
+        if isinstance(parameters, np.ndarray) and parameters.ndim == 1:
+            # Se 'parameter' è un array monodimensionale, estrai il valore scalare
+            parameters = parameters.item()
+        else: 
+            parameters = parameters
+            
+        #print(f"Parametro ricevuto: {parameters}")
+           
+        self.param_history.add(parameters)
+        
+        
         # Definisci l'input per il modello surrogato
         if parameters <= 0.5:
             damage_x = parameters * 2.0
@@ -336,14 +369,16 @@ class MySurrogateModel_fine:
         Y_start = self.predict_per_uno(Input_HF_start)
         Y_flat = tf.reshape(Y_start, [-1])
         
+        
         return Y_flat
+    
+    
     
 
 class MySurrogateModel_coarse:
-    def __init__(self, Input_HF_start):
-        self.Input_HF_start = Input_HF_start
     
     def __call__(self, parameters):
+            
         # Definisci l'input per il modello surrogato
         if parameters <= 0.5:
             damage_x = parameters * 2.0
@@ -358,6 +393,7 @@ class MySurrogateModel_coarse:
         Input_HF_start_flat = Input_HF_start.flatten()
     
         return Input_HF_start_flat
+    
 
     
 class custom_loglike_fine:
@@ -368,43 +404,28 @@ class custom_loglike_fine:
         self.limit = limit
         self.Y_HF = Y_HF
         self.LF_signals_start = LF_signals_start
-        #self.elapsed = None
-        #self.likelihoods_history = []  
-    
-    #def get_likelihoods_history(self):
-        #return self.likelihoods_history 
-    def get_elapsed(self):
-       """Ritorna il tempo impiegato durante l'ultima predizione."""
-       return self.elapsed
 
     def loglike(self,Y):
         
         #valuto likelihood: confronto output modello HF con osservazioni
-        #start = time.time()
+
         Y_reshaped = Y.reshape(n_chains,N_entries,n_channels)
         for i2 in range(N_obs):
            like_single_obs_now[:,i2] = single_param_like_single_obs(self.Y_HF[i1,i2,:,limit:],np.transpose(Y_reshaped[:,limit:,:], axes=[0,2,1]))
         like_tot_now = np.prod(like_single_obs_now,axis=1)
         loglike_value = np.sum(np.log(like_tot_now))
-        #self.likelihoods_history.append(np.exp(loglike_value))
-        #self.elapsed = time.time() - start
+        #print(f"loglike_value: {loglike_value}")
         
         return loglike_value
 
 Y_HF_r = np.transpose(Y_HF, (0, 1, 3, 2)) #(10,8,200,8)
 
-#covariance = np.eye(N_entries*n_channels)
 
 class custom_loglike_coarse:
-    def __init__(self,Y_HF_r,Regressor):
+    def __init__(self,Y_HF_r,Regressor,param_history):
         self.Y_HF_r = Y_HF_r
         self.Regressor = Regressor
-        # self.covariance = covariance
-        
-        # # set the initial bias.
-        # self.bias = np.zeros(N_entries*n_channels)
-        # # precompute the inverse of the covariance.
-        # self.cov_inverse = np.linalg.inv(self.covariance)
+        self.param_history = param_history
     
     @tf.function(jit_compile=True, reduce_retracing=True)
     def predict_optimized(self, Y_HF_r, Input_HF_r):
@@ -423,27 +444,38 @@ class custom_loglike_coarse:
             predictions = self.Regressor([self.Y_HF_r[i1], Input_HF_r[:, 0, 0:4]], training=False)
             
         return predictions
-    
-    # def set_bias(self,mean_bias,covariance_bias):
-        
-    #      self.bias = mean_bias
-    #      self.cov_bias = covariance_bias
-    #      if np.all(self.cov_bias < 1e-9):
-    #        pass
-    #      else:
-    #        self.cov_inverse = np.linalg.inv(self.cov + self.cov_bias)
         
     
     def loglike(self,Input_HF):
         
         Input_HF = tf.reshape(Input_HF, [n_chains,N_entries, 5 + n_channels])
+        #print(f"Input_HF: {Input_HF[:,0,0:4]}")
+
         Input_HF_r = tf.tile(Input_HF, [N_obs, 1, 1])  # Replica Input_HF
         predictions = self.predict_optimized(Y_HF_r,Input_HF_r)
         predictions_true = predictions*delta_max+lik_min
-        loglike_value_coarse = tf.reduce_sum(predictions_true) #- 4 * np.linalg.multi_dot((self.bias.T, self.cov_inverse, self.bias))
+        loglike_value_coarse = tf.reduce_sum(predictions_true) 
+
         
-    
-        return loglike_value_coarse
+        if Input_HF[:,0,2]==1.0:
+            theta_coarse = Input_HF[:,0,3]/2 + 0.5
+        else:
+            theta_coarse = Input_HF[:,0,2]/2
+        
+        theta_coarse = theta_coarse.numpy()[0]
+        
+        mean, std = self.param_history.get_mean_std()
+        # print(f"mean: {mean}")
+        # print(f"std: {std}")
+        # print(f"theta_coarse: {theta_coarse}")
+        #print(f"loglike_value_coarse: {loglike_value_coarse}")
+        
+        eps = 1e-5
+        termine_adattivo = ((theta_coarse-mean)**2)/(std**2)
+        loglike_value_coarse_adapted = loglike_value_coarse - eps*termine_adattivo
+        #print(f"termine_adattivo: {termine_adattivo}")
+      
+        return loglike_value_coarse_adapted
  
 
     
@@ -468,30 +500,30 @@ class CustomUniform:
     
     def rvs(self):
         return np.random.uniform(self.lower_bound, self.upper_bound)
-    
+
 
 my_prior = CustomUniform(0, 1)
-my_loglike_coarse = custom_loglike_coarse(Y_HF_r,Regressor)
+my_loglike_coarse = custom_loglike_coarse(Y_HF_r,Regressor,param_history)
 my_loglike_fine = custom_loglike_fine(n_channels, N_obs, N_entries, limit, Y_HF, LF_signals_start)
-my_coarse_model = MySurrogateModel_coarse(Input_HF_start)
-my_fine_model = MySurrogateModel_fine(n_channels, N_entries, LF_signals_start, HF_net_to_pred)
+my_coarse_model = MySurrogateModel_coarse()
+my_fine_model = MySurrogateModel_fine(n_channels, N_entries, LF_signals_start, HF_net_to_pred,param_history)
 
 # set up the link factories
 my_posterior_coarse = tda.Posterior(my_prior, my_loglike_coarse, my_coarse_model)
 my_posterior_fine = tda.Posterior(my_prior, my_loglike_fine, my_fine_model)
 my_posteriors = [my_posterior_coarse, my_posterior_fine] 
 
-# Set up the proposal : random walk Metropolis -> più veloce, ma ESS più bassa
+# Set up the proposal : random walk Metropolis
 rwmh_cov = 1e-2*np.eye(1)
 rwmh_adaptive = True
 my_proposal = tda.GaussianRandomWalk(C=rwmh_cov, adaptive=rwmh_adaptive)
 
-# Adaptive Metropolis -> più lento, ma ESS più alta, modificare file utils per farlo funzionare
-am_cov = 1e-2*np.eye(1)
-am_t0 = 100
-am_sd = None
-am_epsilon = 1e-6
-am_adaptive = True
+# Adaptive Metropolis -> modificare file utils di tinyda per farlo funzionare
+# am_cov = 1e-2*np.eye(1)
+# am_t0 = 500
+# am_sd = None
+# am_epsilon = 1e-6
+# am_adaptive = True
 #my_proposal = tda.AdaptiveMetropolis(C0=am_cov, t0=am_t0, sd=am_sd, epsilon=am_epsilon, adaptive=am_adaptive)
 
 # Run MCMC
@@ -500,24 +532,29 @@ if "CI" in os.environ:
     iterations = 120
     burnin = 20
 else:
-    iterations = 4000
-    burnin = 600
+    iterations = 10000
+    burnin = 1000
     
-my_chains = tda.sample(my_posterior_fine, my_proposal, iterations=iterations, n_chains=5,store_coarse_chain=False,force_sequential=True)
+my_chains = tda.sample(my_posteriors, my_proposal, iterations=iterations, n_chains=4,store_coarse_chain=False,force_sequential=True)
 
 #%%
 import arviz as az
-idata = tda.to_inference_data(my_chains,burnin=burnin)  
+idata = tda.to_inference_data(my_chains,level='fine',burnin=burnin) 
+ 
 
-params = idata.posterior["x0"].values
 
-az.summary(idata)
+new_idata = idata.sel(draw=slice(None, None, 4), groups="posterior")
 
-az.plot_trace(idata)
+params = new_idata.posterior["x0"].values
+
+az.summary(new_idata)
+
+az.plot_trace(new_idata)
 plt.show()
 
 #Effective Sample Size
-az.ess(idata,var_names=["x0"])
+az.ess(new_idata,var_names=["x0"])
+
 
 
 #%%
