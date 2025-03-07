@@ -34,12 +34,21 @@ save_path = "/data_generation_cartella/GPy_models/sparse_gp.pkl"
 with open(save_path, "rb") as f:
         m_load = pickle.load(f)  
 
+# MCMC Parameters
+noise        = 0.001
+scaling1     = 1
+n_iter       = 11000
+burnin       = 1000
+thin         = 1
+sub_sampling = [5,5]
+case         = "MLDA"
+
 # Initialize Parameters
 n_samples = 25
 np.random.seed(123)
-random_samples = np.random.randint(0, 160, n_samples)
+random_samples = np.random.randint(0, 160, n_samples) # capire perchè 160
 n_eig = 16
-X_values = np.loadtxt('/data_generation_cartella/X_test_h1_16_3.csv', delimiter=',') 
+X_values = np.loadtxt('/data_generation_cartella/X_test_h1_16_3.csv', delimiter=',') # Questi dati sono gli stessi che ho generato per testare il GP?
 y_values = np.loadtxt('/data_generation_cartella/y_test_h1_16_3.csv', delimiter=',')
 
 # Resolution Parameters for Different Solvers
@@ -84,20 +93,11 @@ def model_HF(input): return solver_h1_data(input).flatten()
 def model_LF1(input): return solver_h2_data(input).flatten()
 
 
+# Prior and Proposal Distributions
+x_distribution = stats.multivariate_normal(mean=np.zeros(16), cov=np.eye(16))
+Times, Time_ESS, ESS, samples_tot, ERR = [], [], [], [], []
 
-# MCMC Parameters
-noise        = 0.001
-scaling1     = 1
-n_iter       = 11000
-burnin       = 1000
-thin         = 1
-sub_sampling = [5,5]
-
-
-
-
-
-
+# Define the coarse likelihood distribution -> ricreare una sorta di AdaptiveGaussianLogLike
 class y_distribution_coarse:
 
     # Aggiungere un set_bias method per adaptive error model
@@ -122,7 +122,7 @@ for i, sample in enumerate(random_samples, start=1):
     # Likelihood Distributions
 
     cov_likelihood = noise**2 * np.eye(25)
-    y_distribution_fine = tda.AdaptiveGaussianLogLike(y_observed, cov_likelihood*scaling1)
+    y_distribution_fine = tda.GaussianLogLike(y_observed, cov_likelihood)
     y_distribution_coarse = y_distribution_coarse()
 
     # Proposal Distribution
@@ -136,4 +136,38 @@ for i, sample in enumerate(random_samples, start=1):
 
     my_proposal = tda.GaussianRandomWalk(C=covariance,scaling=1e-1, adaptive=True, gamma=1.1, period=10)
 
+    # Initialize Posteriors
+    my_posteriors = [
+        tda.Posterior(x_distribution, y_distribution_coarse, model_LF1), 
+        tda.Posterior(x_distribution, y_distribution_fine, model_HF),
+    ]if case != "1level" else tda.Posterior(x_distribution, y_distribution_fine, model_HF)
 
+    # Run MCMC Sampling
+    start_time = timeit.default_timer()
+    samples = tda.sample(my_posteriors, my_proposal, iterations=n_iter, n_chains=1,
+                            initial_parameters=res.x, subchain_length=sub_sampling,
+                            adaptive_error_model='state-independent',store_coarse_chain=False)
+    elapsed_time = timeit.default_timer() - start_time
+
+     # Effective Sample Size (ESS)
+    idata = tda.to_inference_data(samples, level=2).sel(draw=slice(burnin, None, thin), groups="posterior")
+    ess = az.ess(idata)
+    mean_ess = np.mean([ess.data_vars[f'x{j}'].values for j in range(16)])
+
+    # Store Results
+    Times.append(elapsed_time)
+    ESS.append(mean_ess)
+    Time_ESS.append(elapsed_time / mean_ess)
+    post = idata.posterior
+    val=post.mean().to_array()
+    err=(np.mean(np.sqrt((x_true-val)**2)))
+    ERR.append(err)
+    print(f'Time: {elapsed_time:.2f}, ESS: {mean_ess:.2f}, Time/ESS: {elapsed_time / mean_ess:.2f}, Err: {err:.3f} ({i}/{n_samples})')
+
+
+# Save Results
+output_folder = '/data_generation_cartella/recorded_values'
+np.save(os.path.join(output_folder, f'MDA_MF_{case}_ratio_001.npy'), Time_ESS)
+np.save(os.path.join(output_folder, f'MDA_MF_{case}_times_001.npy'), Times)
+np.save(os.path.join(output_folder, f'MDA_MF_{case}_err_001.npy'), ERR)
+np.save(os.path.join(output_folder, f'MDA_MF_{case}_ESS_001.npy'), ESS)
