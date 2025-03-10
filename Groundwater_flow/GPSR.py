@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import pickle
 import timeit
 from scipy.spatial import distance
+from scipy.spatial.distance import pdist
 
 save_path = "/data_generation_cartella/GPy_models/sparse_gp.pkl"
 
@@ -25,7 +26,7 @@ n_parameters = 16
 
 # Prendere una parte di questi dati da sporcare e una da lasciare pulita
 # TRAINING SET
-how_many_train = 10000
+how_many_train = 5000
 indices_noisy_train = np.random.choice(n_samples_train, size=how_many_train, replace=False)
 remaining_indices_train = np.setdiff1d(np.arange(n_samples_train), indices_noisy_train)
 indices_clean_train = np.random.choice(remaining_indices_train, size=how_many_train, replace=False)
@@ -50,9 +51,10 @@ log_like_train = log_like_train.reshape(-1, 1)
 
 # Normalizzare la log-likelihood
 log_like_train_norm = (log_like_train - np.mean(log_like_train)) / np.std(log_like_train)
+#log_like_train_norm = (log_like_train - np.min(log_like_train)) / (np.max(log_like_train) - np.min(log_like_train))
 
 # TEST SET
-how_many_test = 2000
+how_many_test = 500
 indices_noisy_test = np.random.choice(n_samples_test, size=how_many_test, replace=False)
 remaining_indices_test = np.setdiff1d(np.arange(n_samples_test), indices_noisy_test)
 indices_clean_test = np.random.choice(remaining_indices_test, size=how_many_test, replace=False)
@@ -68,6 +70,7 @@ y_observed_test = y_to_be_noisy_test + np.random.normal(loc=0.0, scale=noise, si
 # Compute the log-likelihood
 log_like_test = np.zeros(how_many_test)
 
+
 for i in range(how_many_test):
     for j in range(n_datapoints):
         single_value = -0.5 * np.log(2 * np.pi * noise**2) - ((y_observed_test[i,j] - y_clean_test[i,j]) ** 2) / (2 * noise**2)
@@ -76,25 +79,51 @@ for i in range(how_many_test):
 log_like_test = log_like_test.reshape(-1, 1)
 #print(log_like_test)
 
-
 # IMPOSTARE IL KERNEL PER IL GAUSSIAN PROCESS
 
-# classRBF(input_dim, variance=1.0, lengthscale=None, ARD=False, active_dims=None, name='rbf', useGPU=False, inv_l=False
-kernel = gpy.kern.RBF(input_dim=n_parameters, variance=1.0, lengthscale=None) #+ gpy.kern.White(input_dim=n_parameters, variance=0.1)
-# aggiungere un white noise?
+# Stima del lengthscale prima della selezione degli inducing points
+pairwise_dists = pdist(X_train_new, metric='euclidean')
+lengthscale_init = np.median(pairwise_dists)
+
+# Kernel RBF
+kernel = gpy.kern.RBF(input_dim=n_parameters, variance=1.0, lengthscale=lengthscale_init) 
 
 
 # SCEGLIERE GLI INDUCING POINTS PER LA SPARSE REGRESSION
-n_inducing_points = 600
 
-# Casualmente
-Z = X_train_new[np.random.choice(how_many_train, size=n_inducing_points, replace=False), :]
+def select_inducing_points(X_train, kernel, rho=0.72):
+    """
+    Implementazione dell'algoritmo OIPS per selezionare automaticamente gli inducing points.
+    """
+    Z = np.array([X_train[0, :]])  # Inizializza con il primo punto come array NumPy
+    for i in range(1, X_train.shape[0]):
+        x = X_train[i, :]
+        K_xZ = np.array([kernel.K(x.reshape(1, -1), z.reshape(1, -1))[0, 0] for z in Z])
+        if np.max(K_xZ) < rho:
+            Z = np.vstack([Z, x])  
+    return Z
 
-# K-means clustering: centroidi dei cluster come inducing points
-#sklearn.cluster.KMeans(n_clusters=8, *, init='k-means++', n_init='auto', max_iter=300, tol=0.0001, verbose=0, random_state=None, copy_x=True, algorithm='lloyd')
-# kmeans = KMeans(n_clusters=n_inducing_points, random_state=42, n_init=30)
-# kmeans.fit(X_train_new)
-# Z = kmeans.cluster_centers_  # Centroidi dei cluster
+def select_inducing_points_kmeans(X_train, n_clusters):
+    """
+    Seleziona gli inducing points usando l'algoritmo k-means++.
+    
+    Parameters:
+    X_train (numpy.ndarray): Il dataset di addestramento.
+    n_clusters (int): Il numero di inducing points (o centri dei cluster).
+    
+    Returns:
+    numpy.ndarray: I punti inducing selezionati (i centri dei cluster).
+    """
+    kmeans = KMeans(n_clusters=n_clusters, init='k-means++')
+    kmeans.fit(X_train)
+    
+    # I centri dei cluster sono i nostri inducing points
+    inducing_points = kmeans.cluster_centers_
+    
+    return inducing_points
+
+#Z = select_inducing_points(X_train_new, kernel, rho=0.72)
+Z = select_inducing_points_kmeans(X_train_new, n_clusters=300)
 
 
 train_or_test = 0 # 1 for train, 0 for test
@@ -103,6 +132,7 @@ train_or_test = 0 # 1 for train, 0 for test
 if train_or_test == 1:
     
     # ALLENARE IL MODELLO SRGP
+
 
     # Creazione del modello di regressione GP sparso
     m = gpy.models.SparseGPRegression(X_train_new, log_like_train_norm, kernel=kernel, Z=Z)
@@ -113,9 +143,6 @@ if train_or_test == 1:
     
     # **Ottimizzazione 1: fissiamo gli inducing points e ottimizziamo i parametri del kernel**
     m.inducing_inputs.fix()
-    m.rbf.variance = 9.451911805133141
-    m.rbf.lengthscale = 2.6271624691967483
-    m.Gaussian_noise.variance = 0.010561301193138393
     m.optimize('bfgs')
     print(m)
     
@@ -141,7 +168,9 @@ else:
 
     # FARE PREDIZIONE SUL TEST_SET
     Y_pred, Y_var = m_load.predict(X_test_new) 
+    #print(f"Y_var: {Y_var}")
     Y_pred_rescaled = Y_pred * np.std(log_like_train) + np.mean(log_like_train)
+    #Y_pred_rescaled = Y_pred * (np.max(log_like_train) - np.min(log_like_train)) + np.min(log_like_train)
     #print(Y_pred_rescaled)
 
     # Errore assoluto medio
