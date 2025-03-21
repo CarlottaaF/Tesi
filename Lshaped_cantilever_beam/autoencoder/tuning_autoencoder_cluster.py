@@ -78,17 +78,20 @@ n_ist_par = 40 # numero di diverse istanze di parametri generate da LHS
 X_HF = np.zeros((n_ist_par,N_ist,4)) #struttura che contiene, per ogni istanza di parametri, le mille istanze di ampiezza,frequenza e coordinate danno
 
 for i1 in range(n_ist_par):
-    sampler = qmc.LatinHypercube(d=3) #ho 3 input: frequenza, ampiezza e coord danno
-    sample = sampler.random(n=1000) #voglio generare 1000 valori per i miei 3 input
-    X_HF[i1,:,0] = sample[:,0]
-    X_HF[i1,:,1] = sample[:,1]
+    sampler = qmc.LatinHypercube(d=1) #ho 1 input: coord danno
+    sample = sampler.random(n=1000) #voglio generare 1000 valori per il mio input
+
     for i2 in range(1000):
-        if sample[i2, 2] <= 0.5:  #  se il danno è nel primo braccio della struttura
-            X_HF[i1,i2, 2] = sample[i2, 2] * 2 #coordinata x danno
+        if sample[i2, 0] <= 0.5:  #  se il danno è nel primo braccio della struttura
+            X_HF[i1,i2, 2] = sample[i2, 0] * 2 #coordinata x danno
             X_HF[i1,i2, 3] = 0 #coordinata y danno
         else:
             X_HF[i1,i2, 2] = 1
-            X_HF[i1,i2, 3] = (sample[i2, 2] - 0.5) * 2
+            X_HF[i1,i2, 3] = (sample[i2, 0] - 0.5) * 2
+            
+for i1 in range(n_ist_par):
+    X_HF[i1,:,0] = utils.input_true()[:,0]
+    X_HF[i1,:,1] = utils.input_true()[:,1]
 
 #%%
 
