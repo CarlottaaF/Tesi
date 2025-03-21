@@ -74,7 +74,7 @@ Y_HF = utils.load_HF_signals(file_paths, N_ist, n_channels, N_entries)
 
 ### SAMPLE HF INPUT ####
 
-n_ist_par = 40 # numero di diverse istanze di parametri generate da LHS
+n_ist_par = 10 # numero di diverse istanze di parametri generate da LHS
 X_HF = np.zeros((n_ist_par,N_ist,4)) #struttura che contiene, per ogni istanza di parametri, le mille istanze di ampiezza,frequenza e coordinate danno
 
 for i1 in range(n_ist_par):
@@ -232,7 +232,7 @@ def objective(trial):
     activation2 = trial.suggest_categorical('activation2', ['tanh', 'selu', 'gelu', 'relu'])
     decay_length = 0.6
 
-    n_epochs = 200  # -> aumentare
+    n_epochs = 200  
 
     # Inputs
     input_series = layers.Input(shape=(N_entries, n_channels), name='Convolutional_inputs')
