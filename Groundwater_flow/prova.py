@@ -97,7 +97,7 @@ log_like_test_r = log_like_test_r.reshape(-1, 1)
 # oppure
 log_like_train_norm = (log_like_train_r - np.min(log_like_train_r)) / (np.max(log_like_train_r) - np.min(log_like_train_r))
 
-# Reshape X_exp
+# Reshape X
 X_train_r = X_train.reshape(-1, X_train.shape[2])
 X_test_r = X_test.reshape(-1, X_test.shape[2])
 
