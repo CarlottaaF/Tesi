@@ -37,18 +37,18 @@ with open(save_path, "rb") as f:
 # MCMC Parameters
 noise        = 0.001
 scaling1     = 1
-n_iter       = 11000
+n_iter       = 10000
 burnin       = 1000
 thin         = 1
-sub_sampling = [5,5]
-case         = "MLDA"
+sub_sampling = 1
+case         = "1level" #"MLDA" or "1level" 
 
 # Initialize Parameters
-n_samples = 25
+n_samples = 2
 np.random.seed(123)
-random_samples = np.random.randint(0, 160, n_samples) # capire perchè 160
+random_samples = np.random.randint(0, 12800, n_samples) 
 n_eig = 16
-X_values = np.loadtxt('/data_generation_cartella/X_test_h1_16_3.csv', delimiter=',') # Questi dati sono gli stessi che ho generato per testare il GP?
+X_values = np.loadtxt('/data_generation_cartella/X_test_h1_16_3.csv', delimiter=',')
 y_values = np.loadtxt('/data_generation_cartella/y_test_h1_16_3.csv', delimiter=',')
 
 # Resolution Parameters for Different Solvers
@@ -85,31 +85,17 @@ datapoints = np.array(list(product(x_data, y_data)))
 def solver_h1_data(x):
     solver_h1.solve(x)
     return solver_h1.get_data(datapoints)
-def solver_h2_data(x):
+def solver_h2_param(x):
     solver_h2.solve(x) 
-    return solver_h2.get_data(datapoints)
+    return solver_h2.parameters 
 
 def model_HF(input): return solver_h1_data(input).flatten()
-def model_LF1(input): return solver_h2_data(input).flatten()
+def model_LF1(input): return solver_h2_param(input).flatten()
 
 
 # Prior and Proposal Distributions
 x_distribution = stats.multivariate_normal(mean=np.zeros(16), cov=np.eye(16))
 Times, Time_ESS, ESS, samples_tot, ERR = [], [], [], [], []
-
-# Define the coarse likelihood distribution -> ricreare una sorta di AdaptiveGaussianLogLike
-class y_distribution_coarse:
-
-    # Aggiungere un set_bias method per adaptive error model
-           
-    def loglike(self,Y):
-
-        loglike_train = 0 #prendere valore file GPSR.py
-        Y_pred, Y_var = m_load.predict(Y) 
-        Y_pred_rescaled = Y_pred * np.std(loglike_train) + np.mean(loglike_train)
-        #aggiungere parte adattiva
-
-        return Y_pred_rescaled
 
 
 # Sampling for Each Random Sample
@@ -123,6 +109,29 @@ for i, sample in enumerate(random_samples, start=1):
 
     cov_likelihood = noise**2 * np.eye(25)
     y_distribution_fine = tda.GaussianLogLike(y_observed, cov_likelihood)
+
+    @jit(nopython=True, fastmath=True)  # JIT per ottimizzare i calcoli
+    def prepare_input(params, y_observed_r):
+        return np.hstack((params, y_observed_r))  # Operazione più veloce
+
+    # Define the coarse likelihood distribution -> ricreare una sorta di AdaptiveGaussianLogLike
+    class y_distribution_coarse:
+                   
+        def loglike(self,params):
+            
+            log_min = -512.3885870623874
+            log_max = 203.24452726932108
+            params = params.reshape(1,16)
+            y_observed_r = y_observed.reshape(1,25)
+            Input_test = prepare_input(params,y_observed_r)
+            Y_pred, Y_var = m_load.predict(Input_test)
+            Y_pred_rescaled = Y_pred * (log_max - log_min) + log_min
+            #print(Y_pred_rescaled)
+    
+            #aggiungere parte adattiva
+
+            return Y_pred_rescaled
+    
     y_distribution_coarse = y_distribution_coarse()
 
     # Proposal Distribution
@@ -140,13 +149,13 @@ for i, sample in enumerate(random_samples, start=1):
     my_posteriors = [
         tda.Posterior(x_distribution, y_distribution_coarse, model_LF1), 
         tda.Posterior(x_distribution, y_distribution_fine, model_HF),
-    ]if case != "1level" else tda.Posterior(x_distribution, y_distribution_fine, model_HF)
+    ]if case != "1level" else tda.Posterior(x_distribution, y_distribution_coarse, model_LF1)
 
     # Run MCMC Sampling
     start_time = timeit.default_timer()
     samples = tda.sample(my_posteriors, my_proposal, iterations=n_iter, n_chains=1,
                             initial_parameters=res.x, subchain_length=sub_sampling,
-                            adaptive_error_model='state-independent',store_coarse_chain=False)
+                            store_coarse_chain=False)
     elapsed_time = timeit.default_timer() - start_time
 
      # Effective Sample Size (ESS)
@@ -171,3 +180,4 @@ np.save(os.path.join(output_folder, f'MDA_MF_{case}_ratio_001.npy'), Time_ESS)
 np.save(os.path.join(output_folder, f'MDA_MF_{case}_times_001.npy'), Times)
 np.save(os.path.join(output_folder, f'MDA_MF_{case}_err_001.npy'), ERR)
 np.save(os.path.join(output_folder, f'MDA_MF_{case}_ESS_001.npy'), ESS)
+
