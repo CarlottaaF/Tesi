@@ -22,6 +22,7 @@ from tensorflow.keras.models import load_model
 from itertools import product
 from numba import jit
 import pickle
+from joblib import load
 
 # Local Module Imports
 sys.path.append('/data_generation_cartella/')
@@ -29,27 +30,31 @@ import tinyDA as tda
 
 from model import Model
 
-# Save path of the GP model
 save_path = "/data_generation_cartella/GPy_models/sparse_gp.pkl"
 with open(save_path, "rb") as f:
         m_load = pickle.load(f)  
+print(m_load)
+
+pca = load('/data_generation_cartella/GPy_models/pca_model_sparse.joblib')
 
 # MCMC Parameters
-noise        = 0.001
+noise        = 0.01#0.001
 scaling1     = 1
 n_iter       = 10000
 burnin       = 1000
 thin         = 1
 sub_sampling = 1
-case         = "1level" #"MLDA" or "1level" 
+case         = "MLDA" #"MLDA" or "1level" 
 
 # Initialize Parameters
-n_samples = 2
+n_samples = 1 #rimettere a 25
 np.random.seed(123)
 random_samples = np.random.randint(0, 12800, n_samples) 
 n_eig = 16
 X_values = np.loadtxt('/data_generation_cartella/X_test_h1_16_3.csv', delimiter=',')
 y_values = np.loadtxt('/data_generation_cartella/y_test_h1_16_3.csv', delimiter=',')
+y_values_pca = pca.transform(y_values)
+
 
 # Resolution Parameters for Different Solvers
 resolutions = [(50, 50), (25, 25)]
@@ -86,7 +91,7 @@ def solver_h1_data(x):
     solver_h1.solve(x)
     return solver_h1.get_data(datapoints)
 def solver_h2_param(x):
-    solver_h2.solve(x) 
+    solver_h2.solve(x)
     return solver_h2.parameters 
 
 def model_HF(input): return solver_h1_data(input).flatten()
@@ -103,36 +108,44 @@ for i, sample in enumerate(random_samples, start=1):
     print(f'Sample = {sample}')
     x_true = X_values[sample]
     y_true = y_values[sample]
+    y_true_pca = y_values_pca[sample]
     y_observed = y_true + np.random.normal(scale=noise, size=y_true.shape[0])
+    y_observed_pca = y_true_pca + np.random.normal(scale=noise, size=y_true_pca.shape[0])
+
+    y_observed_pca_r = y_observed_pca.reshape(1,10)
+
+    @jit(nopython=True, fastmath=True)  # JIT per ottimizzare i calcoli
+    def prepare_input(params, y_observed_r):
+        return np.hstack((y_observed_r, params))  
+    
 
     # Likelihood Distributions
 
     cov_likelihood = noise**2 * np.eye(25)
     y_distribution_fine = tda.GaussianLogLike(y_observed, cov_likelihood)
 
-    @jit(nopython=True, fastmath=True)  # JIT per ottimizzare i calcoli
-    def prepare_input(params, y_observed_r):
-        return np.hstack((params, y_observed_r))  # Operazione più veloce
 
-    # Define the coarse likelihood distribution -> ricreare una sorta di AdaptiveGaussianLogLike
+    # Define the coarse likelihood distribution 
     class y_distribution_coarse:
+        def __init__(self, y_observed_pca_r):
+            self.y_observed_pca_r = y_observed_pca_r
+            
                    
         def loglike(self,params):
-            
-            log_min = -512.3885870623874
-            log_max = 203.24452726932108
+            #print(params)
+            log_min = -587.9534777849608#-595.9109842692088 #
+            log_max = 212.25108202058436  #192.271837913472 #
             params = params.reshape(1,16)
-            y_observed_r = y_observed.reshape(1,25)
-            Input_test = prepare_input(params,y_observed_r)
+            Input_test = prepare_input(params,self.y_observed_pca_r)
             Y_pred, Y_var = m_load.predict(Input_test)
-            Y_pred_rescaled = Y_pred * (log_max - log_min) + log_min
-            #print(Y_pred_rescaled)
-    
-            #aggiungere parte adattiva
+            Y_var_true = Y_var * (log_max - log_min)**2
+            Y_pred_rescaled = (Y_pred * (log_max - log_min) + log_min)
+            Y_pred_rescaled = Y_pred_rescaled.item() - 10*np.sqrt(Y_var_true.item())
 
             return Y_pred_rescaled
-    
-    y_distribution_coarse = y_distribution_coarse()
+        
+
+    y_distribution_coarse = y_distribution_coarse(y_observed_pca_r)
 
     # Proposal Distribution
 
@@ -143,7 +156,8 @@ for i, sample in enumerate(random_samples, start=1):
     covariance = np.linalg.pinv(res.jac.T @ res.jac)
     covariance *= 1/np.max(np.abs(covariance))
 
-    my_proposal = tda.GaussianRandomWalk(C=covariance,scaling=1e-1, adaptive=True, gamma=1.1, period=10)
+    my_proposal = tda.GaussianRandomWalk(C=covariance,scaling=1e-3, adaptive=True, gamma=1.1, period=10) #gamma=1.1, period=10
+ 
 
     # Initialize Posteriors
     my_posteriors = [
@@ -154,14 +168,18 @@ for i, sample in enumerate(random_samples, start=1):
     # Run MCMC Sampling
     start_time = timeit.default_timer()
     samples = tda.sample(my_posteriors, my_proposal, iterations=n_iter, n_chains=1,
-                            initial_parameters=res.x, subchain_length=sub_sampling,
-                            store_coarse_chain=False)
+                          subchain_length=sub_sampling, initial_parameters=res.x,
+                            store_coarse_chain=False,force_sequential=True)
+    #initial_parameters=res.x
     elapsed_time = timeit.default_timer() - start_time
 
      # Effective Sample Size (ESS)
-    idata = tda.to_inference_data(samples, level=2).sel(draw=slice(burnin, None, thin), groups="posterior")
+    idata = tda.to_inference_data(samples, level='fine').sel(draw=slice(burnin, None, thin), groups="posterior")
     ess = az.ess(idata)
     mean_ess = np.mean([ess.data_vars[f'x{j}'].values for j in range(16)])
+
+    az.plot_trace(idata)
+    plt.savefig('/data_generation_cartella/images/DA_02.png', dpi=300, bbox_inches="tight")
 
     # Store Results
     Times.append(elapsed_time)
@@ -175,9 +193,9 @@ for i, sample in enumerate(random_samples, start=1):
 
 
 # Save Results
-output_folder = '/data_generation_cartella/recorded_values'
-np.save(os.path.join(output_folder, f'MDA_MF_{case}_ratio_001.npy'), Time_ESS)
-np.save(os.path.join(output_folder, f'MDA_MF_{case}_times_001.npy'), Times)
-np.save(os.path.join(output_folder, f'MDA_MF_{case}_err_001.npy'), ERR)
-np.save(os.path.join(output_folder, f'MDA_MF_{case}_ESS_001.npy'), ESS)
+# output_folder = '/data_generation_cartella/recorded_values'
+# np.save(os.path.join(output_folder, f'MDA_MF_{case}_ratio_001_coarse.npy'), Time_ESS)
+# np.save(os.path.join(output_folder, f'MDA_MF_{case}_times_001_coarse.npy'), Times)
+# np.save(os.path.join(output_folder, f'MDA_MF_{case}_err_001_coarse.npy'), ERR)
+# np.save(os.path.join(output_folder, f'MDA_MF_{case}_ESS_001_coarse.npy'), ESS)
 
