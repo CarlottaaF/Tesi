@@ -23,6 +23,8 @@ from itertools import product
 from numba import jit
 import pickle
 from joblib import load
+from scipy.optimize import minimize
+from numpy.linalg import norm
 
 # Local Module Imports
 sys.path.append('/data_generation_cartella/')
@@ -30,12 +32,12 @@ import tinyDA as tda
 
 from model import Model
 
-save_path = "/data_generation_cartella/GPy_models/sparse_gp.pkl"
+save_path = "/data_generation_cartella/GPy_models/sparse_gp_03.pkl"
 with open(save_path, "rb") as f:
         m_load = pickle.load(f)  
 print(m_load)
 
-pca = load('/data_generation_cartella/GPy_models/pca_model_sparse.joblib')
+pca = load('/data_generation_cartella/GPy_models/pca_model.joblib')
 
 # MCMC Parameters
 noise        = 0.01#0.001
@@ -44,7 +46,7 @@ n_iter       = 10000
 burnin       = 1000
 thin         = 1
 sub_sampling = 1
-case         = "MLDA" #"MLDA" or "1level" 
+case         = "DA" # "DA" or "1level" 
 
 # Initialize Parameters
 n_samples = 1 #rimettere a 25
@@ -92,7 +94,7 @@ def solver_h1_data(x):
     return solver_h1.get_data(datapoints)
 def solver_h2_param(x):
     solver_h2.solve(x)
-    return solver_h2.parameters 
+    return solver_h2.parameters
 
 def model_HF(input): return solver_h1_data(input).flatten()
 def model_LF1(input): return solver_h2_param(input).flatten()
@@ -111,12 +113,36 @@ for i, sample in enumerate(random_samples, start=1):
     y_true_pca = y_values_pca[sample]
     y_observed = y_true + np.random.normal(scale=noise, size=y_true.shape[0])
     y_observed_pca = y_true_pca + np.random.normal(scale=noise, size=y_true_pca.shape[0])
+    y_observed_pca_r = y_observed_pca.reshape(1,16)
 
-    y_observed_pca_r = y_observed_pca.reshape(1,10)
-
-    @jit(nopython=True, fastmath=True)  # JIT per ottimizzare i calcoli
     def prepare_input(params, y_observed_r):
         return np.hstack((y_observed_r, params))  
+    
+    # LS
+    def ls(x):
+        return (y_true-model_HF(x))**2
+
+    res = least_squares(ls,np.zeros_like((x_true)), jac='3-point')
+
+    # MAP
+    sigma2 = noise**2  
+    tau2 = 1.0          # prior variance
+
+    def neg_log_posterior(x):
+        likelihood_term = 0.5 / sigma2 * np.sum((y_true - model_HF(x))**2)
+        prior_term = 0.5 / tau2 * np.sum(x**2)
+        return likelihood_term + prior_term
+
+    res_MAP = minimize(neg_log_posterior, np.zeros_like(x_true), method='BFGS')
+
+    # print(f"MAP: {res_MAP.x}")
+    # print(f"LS: {res.x}")
+    # print(x_true)
+    # err_LS = norm(res.x - x_true)
+    # err_MAP = norm(res_MAP.x - x_true)
+
+    # print(f"LS Error: {err_LS:.4f}")
+    # print(f"MAP Error: {err_MAP:.4f}")
     
 
     # Likelihood Distributions
@@ -124,23 +150,36 @@ for i, sample in enumerate(random_samples, start=1):
     cov_likelihood = noise**2 * np.eye(25)
     y_distribution_fine = tda.GaussianLogLike(y_observed, cov_likelihood)
 
+    # Termine correttivo
+
+    log_min = -165.7853541764389 
+    log_max = -0.8866140793422549 
+
+    loglik_FOM = 0.0
+    for i in range(25):
+        loglik_FOM += -((y_observed[i]-model_HF(res_MAP.x)[i]) ** 2) / (2. * (noise) ** 2)
+
+    res_x = res.x.reshape(1,16)   
+    res_MAP = res_MAP.x.reshape(1,16)     
+    Input  = prepare_input(res_MAP, y_observed_pca_r)
+    Pred_GP_LS, _ = m_load.predict(Input)
+    Pred_GP_LS_true = (Pred_GP_LS * (log_max - log_min) + log_min)
+
 
     # Define the coarse likelihood distribution 
     class y_distribution_coarse:
         def __init__(self, y_observed_pca_r):
             self.y_observed_pca_r = y_observed_pca_r
-            
                    
         def loglike(self,params):
-            #print(params)
-            log_min = -587.9534777849608#-595.9109842692088 #
-            log_max = 212.25108202058436  #192.271837913472 #
+            
             params = params.reshape(1,16)
             Input_test = prepare_input(params,self.y_observed_pca_r)
             Y_pred, Y_var = m_load.predict(Input_test)
             Y_var_true = Y_var * (log_max - log_min)**2
             Y_pred_rescaled = (Y_pred * (log_max - log_min) + log_min)
-            Y_pred_rescaled = Y_pred_rescaled.item() - 10*np.sqrt(Y_var_true.item())
+        
+            Y_pred_rescaled = Y_pred_rescaled.item() - np.sqrt(Y_var_true.item()) + loglik_FOM - Pred_GP_LS_true.item()
 
             return Y_pred_rescaled
         
@@ -149,10 +188,8 @@ for i, sample in enumerate(random_samples, start=1):
 
     # Proposal Distribution
 
-    def ls(x):
-        return (y_true-model_HF(x))**2
-
-    res = least_squares(ls,np.zeros_like((x_true)), jac='3-point')
+    #print(res.x)
+    #print(x_true)
     covariance = np.linalg.pinv(res.jac.T @ res.jac)
     covariance *= 1/np.max(np.abs(covariance))
 
@@ -163,7 +200,7 @@ for i, sample in enumerate(random_samples, start=1):
     my_posteriors = [
         tda.Posterior(x_distribution, y_distribution_coarse, model_LF1), 
         tda.Posterior(x_distribution, y_distribution_fine, model_HF),
-    ]if case != "1level" else tda.Posterior(x_distribution, y_distribution_coarse, model_LF1)
+    ]if case != "1level" else tda.Posterior(x_distribution, y_distribution_fine, model_HF)
 
     # Run MCMC Sampling
     start_time = timeit.default_timer()
@@ -177,9 +214,10 @@ for i, sample in enumerate(random_samples, start=1):
     idata = tda.to_inference_data(samples, level='fine').sel(draw=slice(burnin, None, thin), groups="posterior")
     ess = az.ess(idata)
     mean_ess = np.mean([ess.data_vars[f'x{j}'].values for j in range(16)])
+    #print(az.summary(idata))
 
     az.plot_trace(idata)
-    plt.savefig('/data_generation_cartella/images/DA_02.png', dpi=300, bbox_inches="tight")
+    plt.savefig('/data_generation_cartella/images/DA_03.png', dpi=300, bbox_inches="tight")
 
     # Store Results
     Times.append(elapsed_time)
