@@ -13,7 +13,7 @@ from scipy.stats import norm
 from sklearn.decomposition import PCA
 from joblib import dump
 
-save_path = "/data_generation_cartella/GPy_models/sparse_gp.pkl"
+save_path = "/data_generation_cartella/GPy_models/sparse_gp_05.pkl"
 
 np.random.seed(123)
 
@@ -43,14 +43,14 @@ pca = PCA().fit(y_train)
 # plt.savefig('/data_generation_cartella/images/pca.png', format='png')
 
 # Scegli il numero di componenti
-n_components = 10
+n_components = 16
 
 # Applica PCA con il numero di componenti selezionato
 pca = PCA(n_components=n_components)
 y_train_pca = pca.fit_transform(y_train)
 y_test_pca = pca.transform(y_test)
 
-dump(pca, '/data_generation_cartella/GPy_models/pca_model_sparse.joblib')  # Salva il modello PCA
+dump(pca, '/data_generation_cartella/GPy_models/pca_model.joblib')  # Salva il modello PCA
 
 # Creo le istanze di dati e parametri
 def create_data_groups(X, Y, Y_pca, total_instances, how_many_per_group, num_groups, n_datapoints, n_parameters, n_components):
@@ -80,9 +80,9 @@ def create_data_groups(X, Y, Y_pca, total_instances, how_many_per_group, num_gro
     
     return X_exp, Y_exp, Y_exp_pca, X_groups, Y_groups, Y_groups_pca
 
-how_many_per_group_train = 800
-how_many_per_group_test = 200
-num_groups = 20
+how_many_per_group_train = 900
+how_many_per_group_test = 100
+num_groups = 10
 
 X_exp_train, Y_exp_train, Y_exp_train_pca, X_train_groups, Y_train, Y_train_pca = create_data_groups(X_train, y_train, y_train_pca, tot_samples_train, how_many_per_group_train, num_groups, n_datapoints, n_parameters, n_components)
 X_exp_test, Y_exp_test, Y_exp_test_pca, X_test_groups, Y_test, Y_test_pca = create_data_groups(X_test, y_test, y_test_pca, tot_samples_test, how_many_per_group_test, num_groups, n_datapoints, n_parameters, n_components)
@@ -105,7 +105,7 @@ def compute_loglikelihood(Y_exp, Y, how_many_per_group, n_groups, sigma, n_datap
         for i2 in range(n_groups):
                 somma = 0
                 for i3 in range(n_datapoints):
-                    somma += (-(((Y_exp[i1,i3]-Y[i2,i1,i3] ** 2) / (2. * (10*sigma) ** 2)))) #+np.log(1. / (np.sqrt(2. * np.pi) * (sigma*10)))
+                    somma += -(((Y_exp[i1,i3]-Y[i2,i1,i3]) ** 2) / (2. * (10*sigma) ** 2)) #+np.log(1. / (np.sqrt(2. * np.pi) * (sigma*10)))
                 log_lik[i1, i2] = somma 
     
     return log_lik
@@ -149,30 +149,31 @@ Input_train = np.hstack((Y_exp_train_pca_r, X_train_r))
 
 
 
-kernel = gpy.kern.RBF(input_dim=n_components + n_parameters,name='kernel', ARD = False)
+#kernel = gpy.kern.RBF(input_dim=n_components + n_parameters,name='kernel', ARD = False)
 
 # Kernel per i dati (25 features): cattura correlazioni spaziali
-#kernel_data = gpy.kern.RBF(input_dim=n_components, active_dims=range(n_components), ARD = True, name='data_kernel')
-#kernel_data += gpy.kern.White(input_dim=25, active_dims=range(25), variance=0.0001, name='data_noise') 
+kernel_data = gpy.kern.RBF(input_dim=n_components, active_dims=range(n_components), ARD = True, name='data_kernel')
 
 # Kernel per i parametri (16 features): cattura dipendenze tra parametri KLE
-#kernel_params = gpy.kern.RBF(input_dim=n_parameters, active_dims=range(n_components, n_parameters+n_components), ARD = True, name='param_kernel')
+kernel_params = gpy.kern.RBF(input_dim=n_parameters, active_dims=range(n_components, n_parameters+n_components), ARD = True, name='param_kernel')
 
 # Kernel moltiplicativo (interazione tra dati e parametri)
-#kernel = kernel_data * kernel_params
+kernel = kernel_data * kernel_params
 
 def select_inducing_points_kmeans(X_train, n_clusters):
 
-    kmeans = KMeans(n_clusters=n_clusters, init='k-means++')
+    kmeans = KMeans(n_clusters=n_clusters, init='k-means++', n_init=20, max_iter=300, random_state=42)
     kmeans.fit(X_train)
     inducing_points = kmeans.cluster_centers_
     
     return inducing_points
 
-#Z = select_inducing_points_kmeans(Input_train, 700) 
-#Z = Input_train[np.random.choice(how_many_per_group_train, 700, replace=False), :]
 
-train_or_test = 0 # 1 for train, 0 for test
+
+Z = select_inducing_points_kmeans(Input_train, 400) 
+#Z = Input_train[np.random.choice(how_many_per_group_train, 400, replace=False), :]
+
+train_or_test = 1 # 1 for train, 0 for test
 
 
 if train_or_test == 1:
@@ -182,24 +183,24 @@ if train_or_test == 1:
     start_time = timeit.default_timer()
 
 
-    m = gpy.models.GPRegression(Input_train,log_like_train_norm,kernel)
-    print("Modello totale:")
-    print(m)
-    m.optimize('bfgs')
-    print(m)
-
-    # m = gpy.models.SparseGPRegression(X=Input_train, Y=log_like_train_norm, kernel=kernel, Z=Z, name='Sparse_GP')
-    # print("Modello SRGP:")
+    # m = gpy.models.GPRegression(Input_train,log_like_train_norm,kernel)
+    # print("Modello totale:")
     # print(m)
-
-    # m.inducing_inputs.fix()
     # m.optimize('bfgs')
     # print(m)
 
-    # m.inducing_inputs.unfix()  # Sblocca gli inducing points
-    # m.optimize('bfgs')  
+    m = gpy.models.SparseGPRegression(X=Input_train, Y=log_like_train_norm, kernel=kernel, Z=Z, name='Sparse_GP')
+    print("Modello SRGP:")
+    print(m)
 
-    # print(m)
+    m.inducing_inputs.fix()
+    m.optimize('bfgs')
+    print(m)
+
+    m.inducing_inputs.unfix()  # Sblocca gli inducing points
+    m.optimize('bfgs')  
+
+    print(m)
 
 
     elapsed_time = timeit.default_timer() - start_time
@@ -254,7 +255,7 @@ else:
     plt.title('Hexbin Density Plot')
     plt.legend(loc='upper left') 
 
-    plt.savefig('/data_generation_cartella/images/parity_plot_GP4.png', format='png', dpi=300, bbox_inches='tight')
+    plt.savefig('/data_generation_cartella/images/parity_plot_sparse_GP_05.png', format='png', dpi=300, bbox_inches='tight')
 
     residuals = log_like_test_r - Y_pred_rescaled
     
@@ -266,14 +267,14 @@ else:
     plt.xlabel("Predicted Value")
     plt.ylabel("Residuals (True - Predicted)")
     plt.title("Residual Plot")
-    plt.savefig('/data_generation_cartella/images/Residual_plot4.png', format='png')
+    plt.savefig('/data_generation_cartella/images/Residual_plot_sparse_GP_05.png', format='png')
     
     plt.figure(figsize=(6.5, 6.5), dpi=100)
     plt.hist(residuals, bins=30, edgecolor='black', alpha=0.7)
     plt.xlabel("Residuals")
     plt.ylabel("Frequency")
     plt.title("Distribution of Prediction Errors")
-    plt.savefig('/data_generation_cartella/images/Distribution_plot4.png', format='png')
+    plt.savefig('/data_generation_cartella/images/Distribution_plot_sparse_GP_05.png', format='png')
 
 
     # def compute_coverage(y_true, y_pred_mean, y_pred_std, alpha=0.95):
